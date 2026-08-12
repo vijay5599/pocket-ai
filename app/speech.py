@@ -31,6 +31,12 @@ def record_audio_termux(filepath: str, duration: int = 5):
     Records audio using Termux API CLI commands.
     """
     logger.info("Recording audio using Termux:API...")
+    if os.path.exists(filepath):
+        try:
+            os.remove(filepath)
+        except Exception as e:
+            logger.warning(f"Could not remove existing file: {e}")
+
     subprocess.run(["termux-microphone-record", "-q"], capture_output=True)
     subprocess.run(["termux-microphone-record", "-f", filepath, "-l", str(duration)], check=True)
     logger.info(f"Recording for {duration} seconds...")
@@ -47,6 +53,11 @@ def record_audio_with_keypress(filepath: str):
     if is_termux:
         logger.info("Termux detected. Press Enter to START recording...")
         input()
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception as e:
+                logger.warning(f"Could not remove existing file: {e}")
         subprocess.run(["termux-microphone-record", "-q"], capture_output=True)
         subprocess.run(["termux-microphone-record", "-f", filepath, "-l", "0"], check=True)
         logger.info("Recording... Press Enter to STOP recording.")
