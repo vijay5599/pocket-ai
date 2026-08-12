@@ -8,6 +8,12 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash")
 
+# Multi-Provider LLM Config
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")  # Options: gemini, openai, ollama, groq, deepseek
+LLM_API_KEY = os.getenv("LLM_API_KEY", "")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+
 # Mac Agent Endpoint
 MAC_AGENT_URL = os.getenv("MAC_AGENT_URL", "http://127.0.0.1:8001")
 MAC_AGENT_AUTH_TOKEN = os.getenv("MAC_AGENT_AUTH_TOKEN", "")

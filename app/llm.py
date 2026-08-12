@@ -1,9 +1,17 @@
 import os
 import logging
 import json
+import requests
 import google.generativeai as genai
 import google.api_core.exceptions
-from app.config import GEMINI_API_KEY, GEMINI_MODEL_NAME
+from app.config import (
+    GEMINI_API_KEY, 
+    GEMINI_MODEL_NAME,
+    LLM_PROVIDER,
+    LLM_API_KEY,
+    LLM_BASE_URL,
+    LLM_MODEL
+)
 from app.memory import get_recent_history, resolve_project_path, get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -80,14 +88,10 @@ def get_known_projects() -> str:
         logger.error(f"Error getting known projects: {e}")
         return "Could not retrieve known projects."
 
-def query_brain(user_prompt: str) -> dict:
+def query_gemini_brain(user_prompt: str) -> dict:
     """
-    Queries Gemini with context and returns a tool dictionary or conversational reply.
+    Queries Google Gemini API with system instructions and chat history.
     """
-    if not GEMINI_API_KEY:
-        logger.warning("GEMINI_API_KEY is not set. Falling back to rule-based parser for demonstration.")
-        return run_offline_parser(user_prompt)
-
     genai.configure(api_key=GEMINI_API_KEY)
     history = get_recent_history(10)
     projects_context = get_known_projects()
@@ -128,7 +132,7 @@ def query_brain(user_prompt: str) -> dict:
             prompt_with_context += "\n"
         prompt_with_context += f"User: {user_prompt}"
         
-        logger.info(f"Querying Gemini (JSON Mode) with prompt: '{user_prompt}'")
+        logger.info(f"Querying Gemini ({GEMINI_MODEL_NAME}) with prompt: '{user_prompt}'")
         response = model.generate_content(
             prompt_with_context,
             generation_config={"response_mime_type": "application/json"}
@@ -136,44 +140,50 @@ def query_brain(user_prompt: str) -> dict:
         
         res_data = json.loads(response.text.strip())
         logger.info(f"Gemini parsed response: {res_data}")
-        
-        if "tool" in res_data and "arguments" in res_data:
-            args = res_data["arguments"]
-            if "path" in args:
-                resolved = resolve_project_path(args["path"])
-                if resolved:
-                    args["path"] = resolved
-                    
         return res_data
-        
     except google.api_core.exceptions.ResourceExhausted:
-        logger.warning("Gemini API daily/minute quota exhausted! Falling back to offline rule-based parser.")
+        logger.warning("Gemini API quota exhausted! Falling back to offline rule-based parser.")
         return run_offline_parser(user_prompt)
     except Exception as e:
         logger.exception(f"Error querying Gemini API: {e}")
-        return {"reply": f"Sorry, I ran into an error connecting to the AI: {str(e)}"}
+        return run_offline_parser(user_prompt)
 
-def query_brain_with_audio(audio_filepath: str) -> dict:
+def query_openai_compatible_brain(user_prompt: str) -> dict:
     """
-    Passes a raw WAV audio file directly to Gemini to analyze the spoken command.
+    Queries an OpenAI-compatible endpoint (OpenAI, Ollama, Groq, DeepSeek).
     """
-    if not os.path.exists(audio_filepath):
-        logger.error(f"Audio file not found: {audio_filepath}")
-        return {"reply": "Sorry, I could not capture your voice input."}
-
-    if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY is not set. Audio commands require Gemini.")
-        return {"reply": "I heard your voice command, but I need a Gemini API Key to understand the audio. Please configure the GEMINI_API_KEY in your env."}
-
-    genai.configure(api_key=GEMINI_API_KEY)
+    provider = LLM_PROVIDER.lower().strip()
+    
+    # Configure variables based on provider
+    base_url = LLM_BASE_URL
+    api_key = LLM_API_KEY
+    model = LLM_MODEL
+    
+    if provider == "ollama":
+        if not base_url or base_url == "https://api.openai.com/v1":
+            base_url = "http://127.0.0.1:11434/v1"
+        if not model or model == "gpt-4o-mini":
+            model = "llama3"
+        api_key = "ollama"
+    elif provider == "groq":
+        if not base_url or base_url == "https://api.openai.com/v1":
+            base_url = "https://api.groq.com/openai/v1"
+        if not model or model == "gpt-4o-mini":
+            model = "llama3-8b-8192"
+    elif provider == "deepseek":
+        if not base_url or base_url == "https://api.openai.com/v1":
+            base_url = "https://api.deepseek.com/v1"
+        if not model or model == "gpt-4o-mini":
+            model = "deepseek-chat"
+            
+    history = get_recent_history(10)
     projects_context = get_known_projects()
-
+    
     system_instruction = (
         "You are PocketDev AI, a personal AI brain running on an Android phone that controls a MacBook worker. "
-        "You will receive a voice recording of the user's command. "
-        "Your task is to listen to the audio, understand their intent, and decide if it can be fulfilled by executing a tool "
-        "on the Mac, or if you should respond conversationally.\n\n"
-        "You MUST respond with a JSON object in one of the following formats:\n"
+        "Your task is to understand the user's command and decide if it can be fulfilled by executing a tool "
+        "on the Mac, or if you should respond conversationally.\n"
+        "You MUST respond with a JSON object ONLY, in one of the following formats:\n"
         "If executing a tool:\n"
         "{\n"
         "  \"tool\": \"tool_name\",\n"
@@ -190,51 +200,192 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
         "If the user asks to open a specific project, call open_folder with the saved path. "
         "Keep replies short and concise."
     )
-
+    
+    messages = [{"role": "system", "content": system_instruction}]
+    for msg in history:
+        role_map = {"user": "user", "assistant": "assistant"}
+        messages.append({"role": role_map.get(msg["role"], "user"), "content": msg["content"]})
+    messages.append({"role": "user", "content": user_prompt})
+    
+    headers = {
+        "Content-Type": "application/json"
+    }
+    if api_key and api_key != "ollama":
+        headers["Authorization"] = f"Bearer {api_key}"
+        
+    payload = {
+        "model": model,
+        "messages": messages,
+        "response_format": {"type": "json_object"}
+    }
+    
     try:
-        model = genai.GenerativeModel(
-            model_name=GEMINI_MODEL_NAME,
-            system_instruction=system_instruction
-        )
-
-        logger.info(f"Reading audio file bytes from {audio_filepath}...")
-        with open(audio_filepath, "rb") as f:
-            audio_bytes = f.read()
-
-        mime_type = "audio/wav"
-        if audio_filepath.endswith(".amr"):
-            mime_type = "audio/amr"
-        elif audio_filepath.endswith(".aac"):
-            mime_type = "audio/aac"
-            
-        audio_part = {
-            "mime_type": mime_type,
-            "data": audio_bytes
-        }
-
-        response = model.generate_content(
-            [
-                audio_part,
-                "Listen to this audio recording, transcribe the spoken command, and execute it using the appropriate tool or reply."
-            ],
-            generation_config={"response_mime_type": "application/json"}
-        )
-
-        res_data = json.loads(response.text.strip())
-        logger.info(f"Gemini Audio parsed response: {res_data}")
-
-        if "tool" in res_data and "arguments" in res_data:
-            args = res_data["arguments"]
-            if "path" in args:
-                resolved = resolve_project_path(args["path"])
-                if resolved:
-                    args["path"] = resolved
-                    
+        logger.info(f"Querying {provider} model '{model}' at {base_url}...")
+        res = requests.post(f"{base_url}/chat/completions", json=payload, headers=headers, timeout=20)
+        res.raise_for_status()
+        
+        content = res.json()["choices"][0]["message"]["content"]
+        res_data = json.loads(content.strip())
+        logger.info(f"{provider} parsed response: {res_data}")
         return res_data
-
-    except google.api_core.exceptions.ResourceExhausted:
-        logger.warning("Gemini API daily/minute quota exhausted! Audio commands require Gemini, cannot process offline.")
-        return {"reply": "Sorry, Gemini API quota is currently exhausted. Please use Text commands (Option 3) which now support offline fallback execution."}
     except Exception as e:
-        logger.exception(f"Error querying Gemini API with audio: {e}")
-        return {"reply": f"Sorry, I failed to process your voice command: {str(e)}"}
+        logger.exception(f"Error querying {provider} API: {e}")
+        return run_offline_parser(user_prompt)
+
+def query_brain(user_prompt: str) -> dict:
+    """
+    Main router function to query the selected LLM provider.
+    """
+    provider = LLM_PROVIDER.lower().strip()
+    
+    if provider == "gemini":
+        res_data = query_gemini_brain(user_prompt)
+    else:
+        res_data = query_openai_compatible_brain(user_prompt)
+        
+    # Standard check for open_folder resolution in responses
+    if "tool" in res_data and "arguments" in res_data:
+        args = res_data["arguments"]
+        if "path" in args:
+            resolved = resolve_project_path(args["path"])
+            if resolved:
+                args["path"] = resolved
+                
+    return res_data
+
+def transcribe_audio_via_api(audio_filepath: str) -> str:
+    """
+    Transcribes audio using OpenAI or Groq transcription API.
+    """
+    provider = LLM_PROVIDER.lower().strip()
+    api_key = LLM_API_KEY
+    base_url = LLM_BASE_URL
+    model = "whisper-1"
+    
+    if provider == "groq":
+        base_url = "https://api.groq.com/openai/v1"
+        model = "whisper-large-v3"
+    elif provider != "openai":
+        # Fallback to standard OpenAI Whisper if using local Ollama or DeepSeek which don't have Whisper APIs
+        base_url = "https://api.openai.com/v1"
+        
+    if not api_key:
+        logger.error("No API key available for cloud audio transcription.")
+        return ""
+        
+    url = f"{base_url}/audio/transcriptions"
+    headers = {
+        "Authorization": f"Bearer {api_key}"
+    }
+    
+    with open(audio_filepath, "rb") as f:
+        files = {
+            "file": (os.path.basename(audio_filepath), f, "audio/amr" if audio_filepath.endswith(".amr") else "audio/wav")
+        }
+        data = {
+            "model": model
+        }
+        try:
+            logger.info(f"Uploading audio to {provider} Whisper at {url}...")
+            res = requests.post(url, headers=headers, files=files, data=data, timeout=30)
+            res.raise_for_status()
+            text = res.json().get("text", "").strip()
+            logger.info(f"{provider} Whisper result: '{text}'")
+            return text
+        except Exception as e:
+            logger.error(f"Whisper API transcription failed: {e}")
+            return ""
+
+def query_brain_with_audio(audio_filepath: str) -> dict:
+    """
+    Main router function for voice command processing.
+    """
+    provider = LLM_PROVIDER.lower().strip()
+    
+    if provider == "gemini":
+        # Gemini handles audio natively in a single API call!
+        if not os.path.exists(audio_filepath):
+            logger.error(f"Audio file not found: {audio_filepath}")
+            return {"reply": "Sorry, I could not capture your voice input."}
+
+        if not GEMINI_API_KEY:
+            logger.error("GEMINI_API_KEY is not set.")
+            return {"reply": "I heard your voice command, but I need a Gemini API Key to understand it."}
+
+        genai.configure(api_key=GEMINI_API_KEY)
+        projects_context = get_known_projects()
+
+        system_instruction = (
+            "You are PocketDev AI, a personal AI brain running on an Android phone that controls a MacBook worker. "
+            "You will receive a voice recording of the user's command. "
+            "Your task is to listen to the audio, understand their intent, and decide if it can be fulfilled by executing a tool "
+            "on the Mac, or if you should respond conversationally.\n\n"
+            "You MUST respond with a JSON object in one of the following formats:\n"
+            "If executing a tool:\n"
+            "{\n"
+            "  \"tool\": \"tool_name\",\n"
+            "  \"arguments\": {\"param_name\": \"value\"}\n"
+            "}\n"
+            "If replying conversationally:\n"
+            "{\n"
+            "  \"reply\": \"conversational response text\"\n"
+            "}\n\n"
+            "Available tools:\n"
+            f"{TOOLS_GUIDE}\n"
+            "Here is the context of saved project folders on the Mac:\n"
+            f"{projects_context}\n\n"
+            "If the user asks to open a specific project, call open_folder with the saved path. "
+            "Keep replies short and concise."
+        )
+
+        try:
+            model = genai.GenerativeModel(
+                model_name=GEMINI_MODEL_NAME,
+                system_instruction=system_instruction
+            )
+
+            logger.info(f"Reading audio file bytes from {audio_filepath}...")
+            with open(audio_filepath, "rb") as f:
+                audio_bytes = f.read()
+
+            mime_type = "audio/wav"
+            if audio_filepath.endswith(".amr"):
+                mime_type = "audio/amr"
+            elif audio_filepath.endswith(".aac"):
+                mime_type = "audio/aac"
+                
+            audio_part = {
+                "mime_type": mime_type,
+                "data": audio_bytes
+            }
+
+            response = model.generate_content(
+                [
+                    audio_part,
+                    "Listen to this audio recording, transcribe the spoken command, and execute it using the appropriate tool or reply."
+                ],
+                generation_config={"response_mime_type": "application/json"}
+            )
+
+            res_data = json.loads(response.text.strip())
+            logger.info(f"Gemini Audio parsed response: {res_data}")
+            return res_data
+
+        except google.api_core.exceptions.ResourceExhausted:
+            logger.warning("Gemini API daily/minute quota exhausted! Audio commands require Gemini, cannot process offline.")
+            return {"reply": "Sorry, Gemini API quota is currently exhausted. Please use Text commands (Option 3) which now support offline fallback execution."}
+        except Exception as e:
+            logger.exception(f"Error querying Gemini API with audio: {e}")
+            return {"reply": f"Sorry, I failed to process your voice command: {str(e)}"}
+            
+    else:
+        # Non-Gemini providers (OpenAI, Ollama, Groq, DeepSeek) don't support native audio inputs.
+        # We transcribe the audio via Whisper API first, then feed the text to the LLM.
+        logger.info(f"Transcribing audio file first via Whisper API for {provider}...")
+        transcription = transcribe_audio_via_api(audio_filepath)
+        
+        if not transcription:
+            return {"reply": "Sorry, I was unable to transcribe your voice command using the Whisper API."}
+            
+        logger.info(f"Whisper transcribed audio to: '{transcription}'. Submitting to {provider} brain...")
+        return query_brain(transcription)
