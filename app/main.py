@@ -6,8 +6,8 @@ import os
 from app.config import HOST, PORT
 # Wait, we need to declare HOST and PORT in config.py if they are not there, or configure them manually.
 # Let's import config and add defaults.
-from app.api import app, execute_pipeline
-from app.speech import record_and_transcribe, record_audio_with_keypress, transcribe_audio
+from app.api import app, execute_pipeline, execute_pipeline_with_audio
+from app.speech import record_audio, record_audio_with_keypress
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,22 +44,13 @@ def run_interactive_loop():
             elif choice == "1":
                 audio_file = "voice_prompt.wav"
                 print("\nRecording for 5 seconds... Speak now!")
-                text = record_and_transcribe(audio_file, duration=5)
-                if text:
-                    print(f"You said: '{text}'")
-                    execute_pipeline(text)
-                else:
-                    print("Failed to record or transcribe. Try again.")
+                record_audio(audio_file, duration=5)
+                execute_pipeline_with_audio(audio_file)
             elif choice == "2":
                 audio_file = "voice_prompt.wav"
                 print("")
                 record_audio_with_keypress(audio_file)
-                text = transcribe_audio(audio_file)
-                if text:
-                    print(f"You said: '{text}'")
-                    execute_pipeline(text)
-                else:
-                    print("Failed to record or transcribe. Try again.")
+                execute_pipeline_with_audio(audio_file)
             elif choice == "3":
                 cmd = input("\nEnter text command: ").strip()
                 if cmd:

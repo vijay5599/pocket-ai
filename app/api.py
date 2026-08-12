@@ -3,10 +3,10 @@ import logging
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import Dict, Any, List
-from app.llm import query_brain
+from app.llm import query_brain, query_brain_with_audio
 from app.client import send_command
 from app.tts import speak
-from app.speech import record_and_transcribe
+from app.speech import record_audio
 from app.memory import add_message, log_tool_call, get_recent_history, set_value, get_value
 
 logging.basicConfig(level=logging.INFO)
@@ -61,6 +61,37 @@ def execute_pipeline(user_prompt: str) -> str:
         speak(spoken_text)
         return spoken_text
 
+def execute_pipeline_with_audio(audio_filepath: str) -> str:
+    """
+    Executes the pipeline using a recorded audio file.
+    """
+    add_message("user", "[Voice Command]")
+    ai_response = query_brain_with_audio(audio_filepath)
+    
+    if "tool" in ai_response:
+        tool_name = ai_response["tool"]
+        arguments = ai_response.get("arguments", {})
+        
+        result_payload = send_command(tool_name, arguments)
+        status = result_payload.get("status", "error")
+        result = result_payload.get("result", result_payload.get("message", "Execution failed."))
+        
+        log_tool_call(tool_name, arguments, status, result)
+        
+        if status == "success":
+            spoken_text = str(result)
+        else:
+            spoken_text = f"Failed to execute {tool_name}. {result}"
+            
+        add_message("assistant", spoken_text)
+        speak(spoken_text)
+        return spoken_text
+    else:
+        spoken_text = ai_response.get("reply", "I'm not sure how to respond.")
+        add_message("assistant", spoken_text)
+        speak(spoken_text)
+        return spoken_text
+
 @app.get("/")
 def read_root():
     return {"status": "online", "agent": "phone-brain"}
@@ -80,18 +111,13 @@ def run_text_command(req: CommandRequest):
 @app.post("/voice-command")
 def trigger_voice_command(background_tasks: BackgroundTasks, duration: int = 5):
     """
-    Triggers microphone recording, transcribes, queries LLM, executes tool, and speaks back.
+    Triggers microphone recording, queries LLM with audio, executes tool, and speaks back.
     Runs asynchronously in the background.
     """
     def voice_pipeline_task():
-        # Record and transcribe audio
         temp_audio = "input_recording.wav"
-        transcription = record_and_transcribe(temp_audio, duration=duration)
-        if transcription:
-            logger.info(f"Voice Command Pipeline started for: '{transcription}'")
-            execute_pipeline(transcription)
-        else:
-            speak("I didn't hear anything. Please try again.")
+        record_audio(temp_audio, duration=duration)
+        execute_pipeline_with_audio(temp_audio)
             
     background_tasks.add_task(voice_pipeline_task)
     return {"status": "success", "message": "Voice command pipeline triggered."}

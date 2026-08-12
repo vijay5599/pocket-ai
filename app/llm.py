@@ -213,3 +213,79 @@ def query_brain(user_prompt: str) -> dict:
     except Exception as e:
         logger.exception(f"Error querying Gemini API: {e}")
         return {"reply": f"Sorry, I ran into an error connecting to the AI: {str(e)}"}
+
+def query_brain_with_audio(audio_filepath: str) -> dict:
+    """
+    Passes a raw WAV audio file directly to Gemini to analyze the spoken command
+    and determine which tool to execute on the MacBook.
+    """
+    if not os.path.exists(audio_filepath):
+        logger.error(f"Audio file not found: {audio_filepath}")
+        return {"reply": "Sorry, I could not capture your voice input."}
+
+    if not GEMINI_API_KEY:
+        logger.error("GEMINI_API_KEY is not set. Audio commands require Gemini.")
+        return {"reply": "I heard your voice command, but I need a Gemini API Key to understand the audio. Please configure the GEMINI_API_KEY in your env."}
+
+    genai.configure(api_key=GEMINI_API_KEY)
+    projects_context = get_known_projects()
+
+    system_instruction = (
+        "You are PocketDev AI, a personal AI brain running on an Android phone that controls a MacBook worker. "
+        "You will receive a voice recording (audio file) of the user's command. "
+        "Your task is to listen to the audio, understand their intent, and decide if it can be fulfilled by executing a tool "
+        "on the Mac, or if you should respond conversationally.\n\n"
+        "Here is the context of saved project folders on the Mac:\n"
+        f"{projects_context}\n\n"
+        "If the user asks to open a specific project, call open_folder with the saved path. "
+        "If it's general conversation, reply directly. Keep replies short and concise."
+    )
+
+    try:
+        model = genai.GenerativeModel(
+            model_name="gemini-2.5-flash",
+            tools=ALL_TOOLS,
+            system_instruction=system_instruction
+        )
+
+        logger.info(f"Uploading audio file bytes to Gemini from {audio_filepath}...")
+        with open(audio_filepath, "rb") as f:
+            audio_bytes = f.read()
+
+        audio_part = {
+            "mime_type": "audio/wav",
+            "data": audio_bytes
+        }
+
+        response = model.generate_content([
+            audio_part,
+            "Listen to this audio recording, transcribe the spoken command, and execute it using the appropriate tool or reply."
+        ])
+
+        if response.candidates and response.candidates[0].content.parts:
+            parts = response.candidates[0].content.parts
+            for part in parts:
+                if part.function_call:
+                    func_call = part.function_call
+                    tool_name = func_call.name
+                    args = {k: v for k, v in func_call.args.items()}
+                    logger.info(f"Gemini Audio call tool: {tool_name} with args: {args}")
+
+                    if "path" in args:
+                        resolved = resolve_project_path(args["path"])
+                        if resolved:
+                            args["path"] = resolved
+                            
+                    return {
+                        "tool": tool_name,
+                        "arguments": args
+                    }
+
+        reply_text = response.text if response.text else "I heard you, but I couldn't resolve a command."
+        logger.info(f"Gemini Audio conversational reply: '{reply_text}'")
+        return {"reply": reply_text}
+
+    except Exception as e:
+        logger.exception(f"Error querying Gemini API with audio: {e}")
+        return {"reply": f"Sorry, I failed to process your voice command: {str(e)}"}
+
