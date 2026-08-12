@@ -3,6 +3,10 @@ import uvicorn
 import logging
 import sys
 import os
+
+# Auto-add parent directory to path so imports work out-of-the-box
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from app.config import HOST, PORT
 # Wait, we need to declare HOST and PORT in config.py if they are not there, or configure them manually.
 # Let's import config and add defaults.
