@@ -21,3 +21,8 @@ WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "tiny")  # "tiny" is fast a
 # Text to Speech Config
 TTS_VOICE = os.getenv("TTS_VOICE", "en-US-GuyNeural")  # Microsoft Edge TTS Voice
 TTS_OUTPUT_FILE = os.getenv("TTS_OUTPUT_FILE", "response.mp3")
+
+# FastAPI Brain Server Config
+HOST = os.getenv("BRAIN_HOST", "0.0.0.0")
+PORT = int(os.getenv("BRAIN_PORT", "8002"))
+
