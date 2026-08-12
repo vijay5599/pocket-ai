@@ -14,14 +14,12 @@ def find_physical_microphone():
     try:
         import sounddevice as sd
         devices = sd.query_devices()
-        # Look for built-in/physical microphone in device names
         for i, dev in enumerate(devices):
             name = dev["name"].lower()
             if dev["max_input_channels"] > 0:
                 if "microphone" in name or "built-in" in name or "internal" in name:
                     logger.info(f"Auto-selected physical input device: '{dev['name']}' (Index {i})")
                     return i
-        # Fallback to default if no specific name match
         return None
     except Exception as e:
         logger.warning(f"Could not scan input devices: {e}")
@@ -60,8 +58,8 @@ def record_audio_termux(filepath: str, duration: int = 5):
             logger.warning(f"Could not remove existing file: {e}")
 
     subprocess.run(["termux-microphone-record", "-q"], capture_output=True)
-    # Default Termux encoder is amr_nb (writes AMR audio)
-    subprocess.run(["termux-microphone-record", "-f", filepath, "-l", str(duration)], check=True)
+    # Record with AAC encoder (-e aac) which outputs standard .m4a audio compatible with Groq/OpenAI Whisper
+    subprocess.run(["termux-microphone-record", "-e", "aac", "-f", filepath, "-l", str(duration)], check=True)
     logger.info(f"Recording for {duration} seconds...")
     time.sleep(duration)
     subprocess.run(["termux-microphone-record", "-q"], check=True)
@@ -74,22 +72,22 @@ def record_audio_with_keypress(filepath: str) -> str:
     is_termux = shutil.which("termux-microphone-record") is not None
     
     if is_termux:
-        # Termux records as AMR, change extension to .amr
-        amr_path = filepath.replace(".wav", ".amr")
+        # Termux records as AAC, change extension to .m4a
+        m4a_path = filepath.replace(".wav", ".m4a")
         logger.info("Termux detected. Press Enter to START recording...")
         input()
-        if os.path.exists(amr_path):
+        if os.path.exists(m4a_path):
             try:
-                os.remove(amr_path)
+                os.remove(m4a_path)
             except Exception as e:
                 logger.warning(f"Could not remove existing file: {e}")
         subprocess.run(["termux-microphone-record", "-q"], capture_output=True)
-        subprocess.run(["termux-microphone-record", "-f", amr_path, "-l", "0"], check=True)
+        subprocess.run(["termux-microphone-record", "-e", "aac", "-f", m4a_path, "-l", "0"], check=True)
         logger.info("Recording... Press Enter to STOP recording.")
         input()
         subprocess.run(["termux-microphone-record", "-q"], check=True)
         logger.info("Recording stopped.")
-        return amr_path
+        return m4a_path
     else:
         import sounddevice as sd
         import numpy as np
@@ -130,10 +128,10 @@ def record_audio(filepath: str = "input.wav", duration: int = 5) -> str:
     """
     is_termux = shutil.which("termux-microphone-record") is not None
     if is_termux:
-        # Save as .amr for Termux
-        amr_path = filepath.replace(".wav", ".amr")
-        record_audio_termux(amr_path, duration)
-        return amr_path
+        # Save as .m4a for Termux
+        m4a_path = filepath.replace(".wav", ".m4a")
+        record_audio_termux(m4a_path, duration)
+        return m4a_path
     else:
         record_audio_mac(filepath, duration)
         return filepath

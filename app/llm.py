@@ -279,8 +279,14 @@ def transcribe_audio_via_api(audio_filepath: str) -> str:
     }
     
     with open(audio_filepath, "rb") as f:
+        content_type = "audio/wav"
+        if audio_filepath.endswith(".m4a"):
+            content_type = "audio/mp4"
+        elif audio_filepath.endswith(".amr"):
+            content_type = "audio/amr"
+            
         files = {
-            "file": (os.path.basename(audio_filepath), f, "audio/amr" if audio_filepath.endswith(".amr") else "audio/wav")
+            "file": (os.path.basename(audio_filepath), f, content_type)
         }
         data = {
             "model": model
@@ -349,7 +355,9 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
                 audio_bytes = f.read()
 
             mime_type = "audio/wav"
-            if audio_filepath.endswith(".amr"):
+            if audio_filepath.endswith(".m4a"):
+                mime_type = "audio/mp4"
+            elif audio_filepath.endswith(".amr"):
                 mime_type = "audio/amr"
             elif audio_filepath.endswith(".aac"):
                 mime_type = "audio/aac"
