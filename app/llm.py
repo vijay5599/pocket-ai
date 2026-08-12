@@ -2,6 +2,7 @@ import os
 import logging
 import json
 import google.generativeai as genai
+import google.api_core.exceptions
 from app.config import GEMINI_API_KEY
 from app.memory import get_recent_history, resolve_project_path, get_db_connection
 
@@ -21,6 +22,40 @@ TOOLS_GUIDE = (
     "- restart: Restarts the MacBook.\n"
     "- run_command: Runs a general terminal shell command on the MacBook. Arguments: {'command': 'string'}\n"
 )
+
+def run_offline_parser(user_prompt: str) -> dict:
+    """
+    Offline fallback parser that translates user prompts to tools using regex/rules.
+    """
+    cleaned = user_prompt.lower().strip()
+    if "vscode" in cleaned or "vs code" in cleaned:
+        return {"tool": "open_vscode", "arguments": {}}
+    elif "chrome" in cleaned or "google chrome" in cleaned:
+        return {"tool": "open_chrome", "arguments": {}}
+    elif "terminal" in cleaned:
+        return {"tool": "open_terminal", "arguments": {}}
+    elif "finder" in cleaned:
+        return {"tool": "open_finder", "arguments": {}}
+    elif "screenshot" in cleaned:
+        return {"tool": "take_screenshot", "arguments": {}}
+    elif "downloads" in cleaned:
+        if "list" in cleaned:
+            return {"tool": "list_downloads", "arguments": {}}
+        else:
+            return {"tool": "open_folder", "arguments": {"path": "~/Downloads"}}
+    elif "lock" in cleaned:
+        return {"tool": "lock_screen", "arguments": {}}
+    elif "open folder" in cleaned or "open project" in cleaned:
+        # Try to extract path
+        parts = user_prompt.split("open folder")
+        if len(parts) < 2:
+            parts = user_prompt.split("open project")
+        if len(parts) >= 2:
+            extracted_path = parts[1].strip()
+            return {"tool": "open_folder", "arguments": {"path": extracted_path}}
+        return {"tool": "open_finder", "arguments": {}}
+    else:
+        return {"reply": f"Offline Brain: I heard you say '{user_prompt}'"}
 
 def get_known_projects() -> str:
     """
@@ -51,26 +86,7 @@ def query_brain(user_prompt: str) -> dict:
     """
     if not GEMINI_API_KEY:
         logger.warning("GEMINI_API_KEY is not set. Falling back to rule-based parser for demonstration.")
-        cleaned = user_prompt.lower().strip()
-        if "vscode" in cleaned or "vs code" in cleaned:
-            return {"tool": "open_vscode", "arguments": {}}
-        elif "chrome" in cleaned or "google chrome" in cleaned:
-            return {"tool": "open_chrome", "arguments": {}}
-        elif "terminal" in cleaned:
-            return {"tool": "open_terminal", "arguments": {}}
-        elif "finder" in cleaned:
-            return {"tool": "open_finder", "arguments": {}}
-        elif "screenshot" in cleaned:
-            return {"tool": "take_screenshot", "arguments": {}}
-        elif "downloads" in cleaned:
-            if "list" in cleaned:
-                return {"tool": "list_downloads", "arguments": {}}
-            else:
-                return {"tool": "open_folder", "arguments": {"path": "~/Downloads"}}
-        elif "lock" in cleaned:
-            return {"tool": "lock_screen", "arguments": {}}
-        else:
-            return {"reply": f"Mock Brain: I heard you say '{user_prompt}'"}
+        return run_offline_parser(user_prompt)
 
     genai.configure(api_key=GEMINI_API_KEY)
     history = get_recent_history(10)
@@ -130,6 +146,9 @@ def query_brain(user_prompt: str) -> dict:
                     
         return res_data
         
+    except google.api_core.exceptions.ResourceExhausted:
+        logger.warning("Gemini API daily/minute quota exhausted! Falling back to offline rule-based parser.")
+        return run_offline_parser(user_prompt)
     except Exception as e:
         logger.exception(f"Error querying Gemini API: {e}")
         return {"reply": f"Sorry, I ran into an error connecting to the AI: {str(e)}"}
@@ -213,6 +232,9 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
                     
         return res_data
 
+    except google.api_core.exceptions.ResourceExhausted:
+        logger.warning("Gemini API daily/minute quota exhausted! Audio commands require Gemini, cannot process offline.")
+        return {"reply": "Sorry, Gemini API quota is currently exhausted. Please use Text commands (Option 3) which now support offline fallback execution."}
     except Exception as e:
         logger.exception(f"Error querying Gemini API with audio: {e}")
         return {"reply": f"Sorry, I failed to process your voice command: {str(e)}"}

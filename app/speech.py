@@ -7,6 +7,26 @@ from app.config import AUDIO_SAMPLE_RATE
 
 logger = logging.getLogger(__name__)
 
+def find_physical_microphone():
+    """
+    Scans sounddevice list for a physical/built-in microphone to bypass silent loopbacks like BlackHole.
+    """
+    try:
+        import sounddevice as sd
+        devices = sd.query_devices()
+        # Look for built-in/physical microphone in device names
+        for i, dev in enumerate(devices):
+            name = dev["name"].lower()
+            if dev["max_input_channels"] > 0:
+                if "microphone" in name or "built-in" in name or "internal" in name:
+                    logger.info(f"Auto-selected physical input device: '{dev['name']}' (Index {i})")
+                    return i
+        # Fallback to default if no specific name match
+        return None
+    except Exception as e:
+        logger.warning(f"Could not scan input devices: {e}")
+        return None
+
 def record_audio_mac(filepath: str, duration: int = 5):
     """
     Records audio using sounddevice library (for macOS/desktop).
@@ -15,12 +35,14 @@ def record_audio_mac(filepath: str, duration: int = 5):
     import numpy as np
     from scipy.io import wavfile
     
+    device_id = find_physical_microphone()
     logger.info(f"Recording audio for {duration} seconds... Speak now!")
     recording = sd.rec(
         int(duration * AUDIO_SAMPLE_RATE), 
         samplerate=AUDIO_SAMPLE_RATE, 
         channels=1, 
-        dtype='int16'
+        dtype='int16',
+        device=device_id
     )
     sd.wait()
     wavfile.write(filepath, AUDIO_SAMPLE_RATE, recording)
@@ -73,6 +95,7 @@ def record_audio_with_keypress(filepath: str) -> str:
         import numpy as np
         from scipy.io import wavfile
         
+        device_id = find_physical_microphone()
         logger.info("Press Enter to START recording (max 30s)...")
         input()
         logger.info("Recording... Press Enter to STOP recording.")
@@ -83,7 +106,13 @@ def record_audio_with_keypress(filepath: str) -> str:
                 logger.warning(status)
             recording.append(indata.copy())
             
-        stream = sd.InputStream(samplerate=AUDIO_SAMPLE_RATE, channels=1, dtype='int16', callback=callback)
+        stream = sd.InputStream(
+            samplerate=AUDIO_SAMPLE_RATE, 
+            channels=1, 
+            dtype='int16', 
+            callback=callback,
+            device=device_id
+        )
         with stream:
             input()
             
