@@ -11,7 +11,7 @@ def get_db_connection():
     db_dir = os.path.dirname(DB_PATH)
     if db_dir:
         os.makedirs(db_dir, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -91,7 +91,10 @@ def log_tool_call(tool_name: str, arguments: dict, status: str, result: str):
         path = arguments["path"]
         folder_name = os.path.basename(path.rstrip("/"))
         if folder_name:
-            set_value(f"project_path_{folder_name.lower()}", path)
+            cursor.execute(
+                "INSERT OR REPLACE INTO key_value_store (key, value, updated_at) VALUES (?, ?, ?)",
+                (f"project_path_{folder_name.lower()}", path, datetime.now().isoformat())
+            )
             
     conn.commit()
     conn.close()
