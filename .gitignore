@@ -1,0 +1,15 @@
+# Local environment file
+.env
+
+# Python caching
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Temporary media files
+*.wav
+*.mp3
+
+# Databases
+*.db
