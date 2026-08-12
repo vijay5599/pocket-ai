@@ -182,8 +182,14 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
         with open(audio_filepath, "rb") as f:
             audio_bytes = f.read()
 
+        mime_type = "audio/wav"
+        if audio_filepath.endswith(".amr"):
+            mime_type = "audio/amr"
+        elif audio_filepath.endswith(".aac"):
+            mime_type = "audio/aac"
+            
         audio_part = {
-            "mime_type": "audio/wav",
+            "mime_type": mime_type,
             "data": audio_bytes
         }
 

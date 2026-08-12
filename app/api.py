@@ -116,8 +116,8 @@ def trigger_voice_command(background_tasks: BackgroundTasks, duration: int = 5):
     """
     def voice_pipeline_task():
         temp_audio = "input_recording.wav"
-        record_audio(temp_audio, duration=duration)
-        execute_pipeline_with_audio(temp_audio)
+        recorded_path = record_audio(temp_audio, duration=duration)
+        execute_pipeline_with_audio(recorded_path)
             
     background_tasks.add_task(voice_pipeline_task)
     return {"status": "success", "message": "Voice command pipeline triggered."}

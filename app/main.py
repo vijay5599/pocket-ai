@@ -44,13 +44,13 @@ def run_interactive_loop():
             elif choice == "1":
                 audio_file = "voice_prompt.wav"
                 print("\nRecording for 5 seconds... Speak now!")
-                record_audio(audio_file, duration=5)
-                execute_pipeline_with_audio(audio_file)
+                recorded_path = record_audio(audio_file, duration=5)
+                execute_pipeline_with_audio(recorded_path)
             elif choice == "2":
                 audio_file = "voice_prompt.wav"
                 print("")
-                record_audio_with_keypress(audio_file)
-                execute_pipeline_with_audio(audio_file)
+                recorded_path = record_audio_with_keypress(audio_file)
+                execute_pipeline_with_audio(recorded_path)
             elif choice == "3":
                 cmd = input("\nEnter text command: ").strip()
                 if cmd:

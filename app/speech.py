@@ -38,32 +38,36 @@ def record_audio_termux(filepath: str, duration: int = 5):
             logger.warning(f"Could not remove existing file: {e}")
 
     subprocess.run(["termux-microphone-record", "-q"], capture_output=True)
+    # Default Termux encoder is amr_nb (writes AMR audio)
     subprocess.run(["termux-microphone-record", "-f", filepath, "-l", str(duration)], check=True)
     logger.info(f"Recording for {duration} seconds...")
     time.sleep(duration)
     subprocess.run(["termux-microphone-record", "-q"], check=True)
     logger.info("Recording finished.")
 
-def record_audio_with_keypress(filepath: str):
+def record_audio_with_keypress(filepath: str) -> str:
     """
-    Records audio until the user presses enter.
+    Records audio until the user presses enter. Returns the recorded filepath.
     """
     is_termux = shutil.which("termux-microphone-record") is not None
     
     if is_termux:
+        # Termux records as AMR, change extension to .amr
+        amr_path = filepath.replace(".wav", ".amr")
         logger.info("Termux detected. Press Enter to START recording...")
         input()
-        if os.path.exists(filepath):
+        if os.path.exists(amr_path):
             try:
-                os.remove(filepath)
+                os.remove(amr_path)
             except Exception as e:
                 logger.warning(f"Could not remove existing file: {e}")
         subprocess.run(["termux-microphone-record", "-q"], capture_output=True)
-        subprocess.run(["termux-microphone-record", "-f", filepath, "-l", "0"], check=True)
+        subprocess.run(["termux-microphone-record", "-f", amr_path, "-l", "0"], check=True)
         logger.info("Recording... Press Enter to STOP recording.")
         input()
         subprocess.run(["termux-microphone-record", "-q"], check=True)
         logger.info("Recording stopped.")
+        return amr_path
     else:
         import sounddevice as sd
         import numpy as np
@@ -89,6 +93,7 @@ def record_audio_with_keypress(filepath: str):
             logger.info("Recording saved.")
         else:
             logger.error("No audio recorded.")
+        return filepath
 
 def record_audio(filepath: str = "input.wav", duration: int = 5) -> str:
     """
@@ -96,8 +101,10 @@ def record_audio(filepath: str = "input.wav", duration: int = 5) -> str:
     """
     is_termux = shutil.which("termux-microphone-record") is not None
     if is_termux:
-        record_audio_termux(filepath, duration)
+        # Save as .amr for Termux
+        amr_path = filepath.replace(".wav", ".amr")
+        record_audio_termux(amr_path, duration)
+        return amr_path
     else:
         record_audio_mac(filepath, duration)
-    return filepath
-
+        return filepath
