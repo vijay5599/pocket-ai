@@ -6,6 +6,7 @@ load_dotenv()
 
 # API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash")
 
 # Mac Agent Endpoint
 MAC_AGENT_URL = os.getenv("MAC_AGENT_URL", "http://127.0.0.1:8001")

@@ -3,7 +3,7 @@ import logging
 import json
 import google.generativeai as genai
 import google.api_core.exceptions
-from app.config import GEMINI_API_KEY
+from app.config import GEMINI_API_KEY, GEMINI_MODEL_NAME
 from app.memory import get_recent_history, resolve_project_path, get_db_connection
 
 logger = logging.getLogger(__name__)
@@ -116,7 +116,7 @@ def query_brain(user_prompt: str) -> dict:
     
     try:
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name=GEMINI_MODEL_NAME,
             system_instruction=system_instruction
         )
         
@@ -193,7 +193,7 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
 
     try:
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name=GEMINI_MODEL_NAME,
             system_instruction=system_instruction
         )
 
