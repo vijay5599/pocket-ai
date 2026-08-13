@@ -24,7 +24,7 @@ class MemoryRequest(BaseModel):
 
 def execute_pipeline(user_prompt: str) -> str:
     """
-    Executes the pipeline: AI query -> Tool selection -> Mac Execution -> Speak response
+    Executes the command pipeline: user prompt -> query brain -> execute tool -> speak response.
     """
     # 1. Log user request in history
     add_message("user", user_prompt)
@@ -32,14 +32,9 @@ def execute_pipeline(user_prompt: str) -> str:
     # 2. Consult LLM brain
     ai_response = query_brain(user_prompt)
     
-    # 3. Handle response
-    if "tool" in ai_response:
-        tool_name = ai_response["tool"]
-        arguments = ai_response.get("arguments", {})
-        
+    def run_single_tool(tool_name: str, arguments: dict) -> str:
         # Execute tool on Mac
         result_payload = send_command(tool_name, arguments)
-        
         status = result_payload.get("status", "error")
         result = result_payload.get("result", result_payload.get("message", "Execution failed."))
         
@@ -50,17 +45,34 @@ def execute_pipeline(user_prompt: str) -> str:
         if status == "success":
             if isinstance(result, dict) and "exit_code" in result:
                 if result["exit_code"] == 0:
-                    spoken_text = result["stdout"].strip() if result.get("stdout") else "Command executed successfully."
+                    spoken = result["stdout"].strip() if result.get("stdout") else f"Successfully ran {tool_name}."
                 else:
-                    spoken_text = f"Command failed with error: {result['stderr'].strip()}" if result.get("stderr") else f"Command failed with exit code {result['exit_code']}."
+                    spoken = f"Command failed with error: {result['stderr'].strip()}" if result.get("stderr") else f"Command failed with exit code {result['exit_code']}."
             else:
-                spoken_text = str(result)
+                spoken = str(result)
         else:
-            spoken_text = f"Failed to execute {tool_name}. {result}"
-            
+            spoken = f"Failed to execute {tool_name}. {result}"
+        return spoken
+
+    # 3. Handle response
+    if "steps" in ai_response:
+        spoken_parts = []
+        for step in ai_response["steps"]:
+            if "tool" in step:
+                spoken_parts.append(run_single_tool(step["tool"], step.get("arguments", {})))
+            elif "reply" in step:
+                spoken_parts.append(step["reply"])
+        spoken_text = " ".join(spoken_parts)
         add_message("assistant", spoken_text)
         speak(spoken_text)
         return spoken_text
+        
+    elif "tool" in ai_response:
+        spoken_text = run_single_tool(ai_response["tool"], ai_response.get("arguments", {}))
+        add_message("assistant", spoken_text)
+        speak(spoken_text)
+        return spoken_text
+        
     else:
         # Conversational reply
         spoken_text = ai_response.get("reply", "I'm not sure how to respond.")
@@ -77,30 +89,42 @@ def execute_pipeline_with_audio(audio_filepath: str) -> str:
     print("=== USER ===", transcription)
     add_message("user", transcription)
     
-    if "tool" in ai_response:
-        tool_name = ai_response["tool"]
-        arguments = ai_response.get("arguments", {})
-        
+    def run_single_tool(tool_name: str, arguments: dict) -> str:
         result_payload = send_command(tool_name, arguments)
         status = result_payload.get("status", "error")
         result = result_payload.get("result", result_payload.get("message", "Execution failed."))
-        
         log_tool_call(tool_name, arguments, status, result)
         
         if status == "success":
             if isinstance(result, dict) and "exit_code" in result:
                 if result["exit_code"] == 0:
-                    spoken_text = result["stdout"].strip() if result.get("stdout") else "Command executed successfully."
+                    spoken = result["stdout"].strip() if result.get("stdout") else f"Successfully ran {tool_name}."
                 else:
-                    spoken_text = f"Command failed with error: {result['stderr'].strip()}" if result.get("stderr") else f"Command failed with exit code {result['exit_code']}."
+                    spoken = f"Command failed with error: {result['stderr'].strip()}" if result.get("stderr") else f"Command failed with exit code {result['exit_code']}."
             else:
-                spoken_text = str(result)
+                spoken = str(result)
         else:
-            spoken_text = f"Failed to execute {tool_name}. {result}"
-            
+            spoken = f"Failed to execute {tool_name}. {result}"
+        return spoken
+
+    if "steps" in ai_response:
+        spoken_parts = []
+        for step in ai_response["steps"]:
+            if "tool" in step:
+                spoken_parts.append(run_single_tool(step["tool"], step.get("arguments", {})))
+            elif "reply" in step:
+                spoken_parts.append(step["reply"])
+        spoken_text = " ".join(spoken_parts)
         add_message("assistant", spoken_text)
         speak(spoken_text)
         return spoken_text
+        
+    elif "tool" in ai_response:
+        spoken_text = run_single_tool(ai_response["tool"], ai_response.get("arguments", {}))
+        add_message("assistant", spoken_text)
+        speak(spoken_text)
+        return spoken_text
+        
     else:
         spoken_text = ai_response.get("reply", "I'm not sure how to respond.")
         add_message("assistant", spoken_text)

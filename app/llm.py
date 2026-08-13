@@ -95,9 +95,10 @@ def get_known_projects() -> str:
         logger.error(f"Error getting known projects: {e}")
         return "Could not retrieve known projects."
 
-def query_gemini_brain(user_prompt: str) -> dict:
+def query_gemini_brain(user_prompt: str) -> any:
     """
     Queries Google Gemini API with system instructions and chat history.
+    Returns parsed JSON object (can be list or dict).
     """
     genai.configure(api_key=GEMINI_API_KEY)
     history = get_recent_history(10)
@@ -107,12 +108,17 @@ def query_gemini_brain(user_prompt: str) -> dict:
         "You are PocketDev AI, a personal AI brain running on an Android phone that controls a MacBook worker. "
         "Your task is to understand the user's command and decide if it can be fulfilled by executing a tool "
         "on the Mac, or if you should respond conversationally.\n\n"
-        "You MUST respond with a JSON object in one of the following formats:\n"
-        "If executing a tool:\n"
+        "You MUST respond with a JSON object (or JSON list of objects for multi-step tasks) in one of the following formats:\n"
+        "If executing a single tool:\n"
         "{\n"
         "  \"tool\": \"tool_name\",\n"
         "  \"arguments\": {\"param_name\": \"value\"}\n"
         "}\n"
+        "If executing multiple actions sequentially, return a JSON list of tool objects, e.g.:\n"
+        "[\n"
+        "  {\"tool\": \"open_vscode\", \"arguments\": {}},\n"
+        "  {\"tool\": \"run_command\", \"arguments\": {\"command\": \"code --new-file file.py\"}}\n"
+        "]\n"
         "If replying conversationally:\n"
         "{\n"
         "  \"reply\": \"conversational response text\"\n"
@@ -159,7 +165,7 @@ def query_gemini_brain(user_prompt: str) -> dict:
         logger.exception(f"Error querying Gemini API: {e}")
         return run_offline_parser(user_prompt)
 
-def query_openai_compatible_brain(user_prompt: str) -> dict:
+def query_openai_compatible_brain(user_prompt: str) -> any:
     """
     Queries an OpenAI-compatible endpoint (OpenAI, Ollama, Groq, DeepSeek).
     """
@@ -193,12 +199,17 @@ def query_openai_compatible_brain(user_prompt: str) -> dict:
         "You are PocketDev AI, a personal AI brain running on an Android phone that controls a MacBook worker. "
         "Your task is to understand the user's command and decide if it can be fulfilled by executing a tool "
         "on the Mac, or if you should respond conversationally.\n"
-        "You MUST respond with a JSON object ONLY, in one of the following formats:\n"
-        "If executing a tool:\n"
+        "You MUST respond with a JSON object (or JSON list of objects for multi-step tasks) ONLY, in one of the following formats:\n"
+        "If executing a single tool:\n"
         "{\n"
         "  \"tool\": \"tool_name\",\n"
         "  \"arguments\": {\"param_name\": \"value\"}\n"
         "}\n"
+        "If executing multiple actions sequentially, return a JSON list of tool objects, e.g.:\n"
+        "[\n"
+        "  {\"tool\": \"open_vscode\", \"arguments\": {}},\n"
+        "  {\"tool\": \"run_command\", \"arguments\": {\"command\": \"code --new-file file.py\"}}\n"
+        "]\n"
         "If replying conversationally:\n"
         "{\n"
         "  \"reply\": \"conversational response text\"\n"
@@ -249,6 +260,8 @@ def query_openai_compatible_brain(user_prompt: str) -> dict:
 def query_brain(user_prompt: str) -> dict:
     """
     Main router function to query the selected LLM provider with self-correcting routing.
+    Standardizes output to always return a dictionary containing either a single tool call,
+    a conversational reply, or a list of steps: {'steps': [...]}
     """
     provider = LLM_PROVIDER.lower().strip()
     
@@ -257,34 +270,48 @@ def query_brain(user_prompt: str) -> dict:
     else:
         res_data = query_openai_compatible_brain(user_prompt)
         
-    # Self-Correction for LLM tool-name hallucinations (common in smaller models)
-    supported_static_tools = {
-        "open_vscode", "open_chrome", "open_terminal", "open_finder",
-        "open_folder", "take_screenshot", "list_downloads", "lock_screen",
-        "shutdown", "restart", "run_command"
-    }
-    
-    if "tool" in res_data:
-        tool_name = res_data["tool"]
-        args = res_data.get("arguments", {})
-        
-        # Self-correct only if the tool name is NOT supported by the Mac Agent
-        if tool_name not in supported_static_tools:
-            if "command" in args:
-                logger.warning(f"Self-corrected tool name hallucination '{tool_name}' -> 'run_command'")
-                res_data["tool"] = "run_command"
-            else:
-                logger.warning(f"Unsupported tool '{tool_name}' returned. Resetting via offline fallback.")
-                return run_offline_parser(user_prompt)
-                
-    if "tool" in res_data and "arguments" in res_data:
-        args = res_data["arguments"]
-        if "path" in args:
-            resolved = resolve_project_path(args["path"])
-            if resolved:
-                args["path"] = resolved
-                
-    return res_data
+    # Helper to clean up individual tool call steps
+    def process_tool_call(call: dict) -> dict:
+        supported_static_tools = {
+            "open_vscode", "open_chrome", "open_terminal", "open_finder",
+            "open_folder", "take_screenshot", "list_downloads", "lock_screen",
+            "shutdown", "restart", "run_command"
+        }
+        if "tool" in call:
+            tool_name = call["tool"]
+            args = call.get("arguments", {})
+            
+            # Self-correct unrecognized tool names to run_command if they look like commands
+            if tool_name not in supported_static_tools:
+                if "command" in args:
+                    logger.warning(f"Self-corrected tool name hallucination '{tool_name}' -> 'run_command'")
+                    call["tool"] = "run_command"
+                else:
+                    logger.warning(f"Unsupported tool '{tool_name}' returned. Resetting via offline fallback.")
+                    return run_offline_parser(user_prompt)
+                    
+            if "arguments" in call:
+                args = call["arguments"]
+                if "path" in args:
+                    resolved = resolve_project_path(args["path"])
+                    if resolved:
+                        args["path"] = resolved
+        return call
+
+    if isinstance(res_data, list):
+        processed_steps = []
+        for step in res_data:
+            if isinstance(step, dict):
+                processed_steps.append(process_tool_call(step))
+        return {"steps": processed_steps}
+    elif isinstance(res_data, dict):
+        if "steps" in res_data:
+            processed_steps = [process_tool_call(s) for s in res_data["steps"] if isinstance(s, dict)]
+            res_data["steps"] = processed_steps
+            return res_data
+        return process_tool_call(res_data)
+    else:
+        return {"reply": f"Could not parse LLM response: {res_data}"}
 
 def transcribe_audio_via_api(audio_filepath: str) -> str:
     """
@@ -357,13 +384,18 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
             "You will receive a voice recording of the user's command. "
             "Your task is to listen to the audio, understand their intent, and decide if it can be fulfilled by executing a tool "
             "on the Mac, or if you should respond conversationally.\n\n"
-            "You MUST respond with a JSON object in one of the following formats:\n"
-            "If executing a tool:\n"
+            "You MUST respond with a JSON object (or JSON list of objects for multi-step tasks) in one of the following formats:\n"
+            "If executing a single tool:\n"
             "{\n"
             "  \"transcription\": \"exact transcribed spoken command from the user\",\n"
             "  \"tool\": \"tool_name\",\n"
             "  \"arguments\": {\"param_name\": \"value\"}\n"
             "}\n"
+            "If executing multiple actions sequentially, return a JSON list of tool objects, e.g.:\n"
+            "[\n"
+            "  {\"tool\": \"open_vscode\", \"arguments\": {}},\n"
+            "  {\"tool\": \"run_command\", \"arguments\": {\"command\": \"code --new-file file.py\"}}\n"
+            "]\n"
             "If replying conversationally:\n"
             "{\n"
             "  \"transcription\": \"exact transcribed spoken command from the user\",\n"
@@ -414,6 +446,8 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
 
             res_data = json.loads(response.text.strip())
             logger.info(f"Gemini Audio parsed response: {res_data}")
+            if isinstance(res_data, list):
+                res_data = {"steps": res_data}
             return res_data
 
         except google.api_core.exceptions.ResourceExhausted:
