@@ -16,19 +16,22 @@ from app.memory import get_recent_history, resolve_project_path, get_db_connecti
 
 logger = logging.getLogger(__name__)
 
-# List of available tools for reference in system instructions
+# Upgraded TOOLS_GUIDE to teach the LLM how to utilize run_command dynamically
 TOOLS_GUIDE = (
     "- open_vscode: Opens Visual Studio Code on the MacBook.\n"
     "- open_chrome: Opens Google Chrome on the MacBook.\n"
     "- open_terminal: Opens the Terminal application on the MacBook.\n"
     "- open_finder: Opens Finder at the home directory on the MacBook.\n"
     "- open_folder: Opens a specific folder path in Finder on the MacBook. Arguments: {'path': 'string'}\n"
-    "- take_screenshot: Takes a screenshot of the MacBook screen.\n"
+    "- take_screenshot: Takes a screenshot of the MacBook screen (default save to Desktop).\n"
     "- list_downloads: Lists the files inside the Downloads directory on the MacBook.\n"
     "- lock_screen: Locks the MacBook screen immediately.\n"
     "- shutdown: Shuts down the MacBook.\n"
     "- restart: Restarts the MacBook.\n"
-    "- run_command: Runs a general terminal shell command on the MacBook. Arguments: {'command': 'string'}\n"
+    "- run_command: Runs a general terminal shell command or script on the MacBook. Arguments: {'command': 'string'}. "
+    "Use this for complex, custom, or multi-step requests not covered by other tools, such as sending emails, "
+    "taking and saving screenshots to specific folders, moving/copying files, running custom python code, "
+    "or executing AppleScript automations via `osascript -e '...'`.\n"
 )
 
 def run_offline_parser(user_prompt: str) -> dict:
@@ -45,6 +48,9 @@ def run_offline_parser(user_prompt: str) -> dict:
     elif "finder" in cleaned:
         return {"tool": "open_finder", "arguments": {}}
     elif "screenshot" in cleaned:
+        if "desktop" in cleaned or "folder" in cleaned or "directory" in cleaned:
+            # Fallback to run_command for custom location
+            return {"tool": "run_command", "arguments": {"command": "screencapture -x ~/Desktop/screenshot_custom.png"}}
         return {"tool": "take_screenshot", "arguments": {}}
     elif "downloads" in cleaned:
         if "list" in cleaned:
@@ -54,7 +60,6 @@ def run_offline_parser(user_prompt: str) -> dict:
     elif "lock" in cleaned:
         return {"tool": "lock_screen", "arguments": {}}
     elif "open folder" in cleaned or "open project" in cleaned:
-        # Try to extract path
         parts = user_prompt.split("open folder")
         if len(parts) < 2:
             parts = user_prompt.split("open project")
@@ -114,7 +119,9 @@ def query_gemini_brain(user_prompt: str) -> dict:
         f"{TOOLS_GUIDE}\n"
         "Here is the context of saved project folders on the Mac:\n"
         f"{projects_context}\n\n"
-        "If the user asks to open a specific project, call open_folder with the saved path. "
+        "For complex, custom, or multi-step requests (e.g. sending an email, taking a screenshot and saving "
+        "it in a specific directory, moving files, etc.), you can write a shell command or AppleScript and call "
+        "the run_command tool. Be creative and utilize standard macOS CLI utilities (like `screencapture`, `osascript`, `open`, etc.). "
         "Keep replies short and concise."
     )
     
@@ -154,7 +161,6 @@ def query_openai_compatible_brain(user_prompt: str) -> dict:
     """
     provider = LLM_PROVIDER.lower().strip()
     
-    # Configure variables based on provider
     base_url = LLM_BASE_URL
     api_key = LLM_API_KEY
     model = LLM_MODEL
@@ -197,7 +203,9 @@ def query_openai_compatible_brain(user_prompt: str) -> dict:
         f"{TOOLS_GUIDE}\n"
         "Here is the context of saved project folders on the Mac:\n"
         f"{projects_context}\n\n"
-        "If the user asks to open a specific project, call open_folder with the saved path. "
+        "For complex, custom, or multi-step requests (e.g. sending an email, taking a screenshot and saving "
+        "it in a specific directory, moving files, etc.), you can write a shell command or AppleScript and call "
+        "the run_command tool. Be creative and utilize standard macOS CLI utilities (like `screencapture`, `osascript`, `open`, etc.). "
         "Keep replies short and concise."
     )
     
@@ -243,7 +251,6 @@ def query_brain(user_prompt: str) -> dict:
     else:
         res_data = query_openai_compatible_brain(user_prompt)
         
-    # Standard check for open_folder resolution in responses
     if "tool" in res_data and "arguments" in res_data:
         args = res_data["arguments"]
         if "path" in args:
@@ -266,7 +273,6 @@ def transcribe_audio_via_api(audio_filepath: str) -> str:
         base_url = "https://api.groq.com/openai/v1"
         model = "whisper-large-v3"
     elif provider != "openai":
-        # Fallback to standard OpenAI Whisper if using local Ollama or DeepSeek which don't have Whisper APIs
         base_url = "https://api.openai.com/v1"
         
     if not api_key:
@@ -309,7 +315,6 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
     provider = LLM_PROVIDER.lower().strip()
     
     if provider == "gemini":
-        # Gemini handles audio natively in a single API call!
         if not os.path.exists(audio_filepath):
             logger.error(f"Audio file not found: {audio_filepath}")
             return {"reply": "Sorry, I could not capture your voice input."}
@@ -342,7 +347,9 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
             f"{TOOLS_GUIDE}\n"
             "Here is the context of saved project folders on the Mac:\n"
             f"{projects_context}\n\n"
-            "If the user asks to open a specific project, call open_folder with the saved path. "
+            "For complex, custom, or multi-step requests (e.g. sending an email, taking a screenshot and saving "
+            "it in a specific directory, moving files, etc.), you can write a shell command or AppleScript and call "
+            "the run_command tool. Be creative and utilize standard macOS CLI utilities (like `screencapture`, `osascript`, `open`, etc.). "
             "Keep replies short and concise."
         )
 
@@ -389,8 +396,6 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
             return {"reply": f"Sorry, I failed to process your voice command: {str(e)}"}
             
     else:
-        # Non-Gemini providers (OpenAI, Ollama, Groq, DeepSeek) don't support native audio inputs.
-        # We transcribe the audio via Whisper API first, then feed the text to the LLM.
         logger.info(f"Transcribing audio file first via Whisper API for {provider}...")
         transcription = transcribe_audio_via_api(audio_filepath)
         
