@@ -48,7 +48,13 @@ def execute_pipeline(user_prompt: str) -> str:
         
         # Generate spoken response
         if status == "success":
-            spoken_text = str(result)
+            if isinstance(result, dict) and "exit_code" in result:
+                if result["exit_code"] == 0:
+                    spoken_text = result["stdout"].strip() if result.get("stdout") else "Command executed successfully."
+                else:
+                    spoken_text = f"Command failed with error: {result['stderr'].strip()}" if result.get("stderr") else f"Command failed with exit code {result['exit_code']}."
+            else:
+                spoken_text = str(result)
         else:
             spoken_text = f"Failed to execute {tool_name}. {result}"
             
@@ -82,7 +88,13 @@ def execute_pipeline_with_audio(audio_filepath: str) -> str:
         log_tool_call(tool_name, arguments, status, result)
         
         if status == "success":
-            spoken_text = str(result)
+            if isinstance(result, dict) and "exit_code" in result:
+                if result["exit_code"] == 0:
+                    spoken_text = result["stdout"].strip() if result.get("stdout") else "Command executed successfully."
+                else:
+                    spoken_text = f"Command failed with error: {result['stderr'].strip()}" if result.get("stderr") else f"Command failed with exit code {result['exit_code']}."
+            else:
+                spoken_text = str(result)
         else:
             spoken_text = f"Failed to execute {tool_name}. {result}"
             
