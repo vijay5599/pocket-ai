@@ -268,11 +268,8 @@ def query_brain(user_prompt: str) -> dict:
         tool_name = res_data["tool"]
         args = res_data.get("arguments", {})
         
-        # If the LLM passed a command argument to a static tool (like open_vscode), convert to run_command
-        if tool_name != "run_command" and "command" in args:
-            logger.warning(f"Self-corrected tool '{tool_name}' -> 'run_command' because it passed a 'command' argument.")
-            res_data["tool"] = "run_command"
-        elif tool_name not in supported_static_tools:
+        # Self-correct only if the tool name is NOT supported by the Mac Agent
+        if tool_name not in supported_static_tools:
             if "command" in args:
                 logger.warning(f"Self-corrected tool name hallucination '{tool_name}' -> 'run_command'")
                 res_data["tool"] = "run_command"
