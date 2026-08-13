@@ -1,6 +1,7 @@
 import os
 import logging
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from typing import Dict, Any, List
 from app.llm import query_brain, query_brain_with_audio
@@ -95,6 +96,16 @@ def execute_pipeline_with_audio(audio_filepath: str) -> str:
 @app.get("/")
 def read_root():
     return {"status": "online", "agent": "phone-brain"}
+
+@app.get("/ui", response_class=HTMLResponse)
+def serve_ui():
+    """
+    Serves the premium glassmorphism Assistant Web UI.
+    """
+    static_file_path = os.path.join(os.path.dirname(__file__), "static", "index.html")
+    if os.path.exists(static_file_path):
+        return FileResponse(static_file_path)
+    raise HTTPException(status_code=404, detail="UI index.html not found.")
 
 @app.post("/command")
 def run_text_command(req: CommandRequest):

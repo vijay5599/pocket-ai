@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PocketDev AI - Assistant Terminal</title>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0d13;
+            --card-bg: rgba(17, 20, 28, 0.65);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --accent-primary: #8b5cf6;
+            --accent-secondary: #06b6d4;
+            --accent-glow: rgba(139, 92, 246, 0.15);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Ambient Background Glows */
+        .glow-1 {
+            position: absolute;
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            top: -10%;
+            left: -10%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .glow-2 {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(6, 182, 212, 0.1) 0%, transparent 70%);
+            bottom: -10%;
+            right: -10%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Main Container */
+        .terminal-container {
+            width: 90%;
+            max-width: 650px;
+            height: 85vh;
+            background: var(--card-bg);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            z-index: 1;
+            overflow: hidden;
+            transition: border-color 0.3s ease;
+        }
+
+        /* Terminal Header */
+        .terminal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(10, 12, 18, 0.4);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-logo {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            box-shadow: 0 0 12px var(--accent-primary);
+            position: relative;
+        }
+
+        .brand-logo::after {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: inherit;
+            border-radius: inherit;
+            animation: pulse 2s infinite;
+            opacity: 0.8;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 0.8; }
+            100% { transform: scale(2.2); opacity: 0; }
+        }
+
+        .brand-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 600;
+            font-size: 18px;
+            letter-spacing: 0.5px;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            background: rgba(255, 255, 255, 0.04);
+            padding: 6px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: #10b981;
+            box-shadow: 0 0 8px #10b981;
+        }
+
+        /* Chat Messages Area */
+        .chat-area {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            scroll-behavior: smooth;
+        }
+
+        .chat-area::-webkit-scrollbar {
+            width: 5px;
+        }
+
+        .chat-area::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .chat-area::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 14px 18px;
+            border-radius: 18px;
+            font-size: 14.5px;
+            line-height: 1.5;
+            animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes slideUp {
+            from { transform: translateY(12px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(139, 92, 246, 0.05));
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            color: #f5f3ff;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.assistant {
+            align-self: flex-start;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+            border-bottom-left-radius: 4px;
+        }
+
+        .message.system {
+            align-self: center;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            font-size: 13px;
+            text-align: center;
+        }
+
+        .message-time {
+            display: block;
+            font-size: 10px;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            text-align: right;
+            opacity: 0.6;
+        }
+
+        /* Input Controls Panel */
+        .input-panel {
+            padding: 20px 24px;
+            border-top: 1px solid var(--border-color);
+            background: rgba(10, 12, 18, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .text-input-wrapper {
+            flex: 1;
+            position: relative;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .text-input-wrapper:focus-within {
+            border-color: rgba(139, 92, 246, 0.4);
+            box-shadow: 0 0 15px rgba(139, 92, 246, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .text-input {
+            width: 100%;
+            background: transparent;
+            border: none;
+            outline: none;
+            padding: 16px 20px;
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 15px;
+        }
+
+        .text-input::placeholder {
+            color: var(--text-secondary);
+            opacity: 0.7;
+        }
+
+        /* Interactive Buttons */
+        .btn {
+            background: transparent;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .btn-mic {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+            color: white;
+            position: relative;
+        }
+
+        .btn-mic:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.6);
+        }
+
+        .btn-mic:active {
+            transform: scale(0.95);
+        }
+
+        /* Recording Pulsing States */
+        .btn-mic.recording {
+            animation: recordPulse 1.5s infinite;
+        }
+
+        @keyframes recordPulse {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); background: #ef4444; }
+            70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); background: #ef4444; }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); background: #ef4444; }
+        }
+
+        .btn-send {
+            width: 52px;
+            height: 52px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .btn-send:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* SVG Icons */
+        .icon {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+        }
+
+        /* Empty State */
+        .empty-history {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            color: var(--text-secondary);
+            gap: 16px;
+            padding: 40px;
+            opacity: 0.8;
+        }
+
+        .empty-history-icon {
+            width: 48px;
+            height: 48px;
+            stroke: var(--text-secondary);
+            opacity: 0.4;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="glow-1"></div>
+    <div class="glow-2"></div>
+
+    <div class="terminal-container">
+        <!-- Header -->
+        <div class="terminal-header">
+            <div class="brand">
+                <div class="brand-logo"></div>
+                <div class="brand-title">PocketDev AI</div>
+            </div>
+            <div class="status-badge">
+                <div class="status-dot"></div>
+                <span id="connection-status">Online</span>
+            </div>
+        </div>
+
+        <!-- Chat Logs -->
+        <div class="chat-area" id="chat-box">
+            <div class="empty-history" id="empty-state">
+                <svg class="empty-history-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 0 0 6-6v-1.5m-6 7.5a6 6 0 0 1-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 0 1-3-3V4.5a3 3 0 1 1 6 0v8.25a3 3 0 0 1-3 3Z" />
+                </svg>
+                <p>Ready to execute commands. Type below or press the Mic to trigger a voice pipeline on the phone.</p>
+            </div>
+        </div>
+
+        <!-- Input Box -->
+        <div class="input-panel">
+            <button class="btn btn-mic" id="mic-btn" title="Record Voice Command">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <path fill="currentColor" d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+                </svg>
+            </button>
+            <div class="text-input-wrapper">
+                <input type="text" class="text-input" id="cmd-input" placeholder="Type a command (e.g. open vscode)..." autocomplete="off">
+            </div>
+            <button class="btn btn-send" id="send-btn" title="Send Command">
+                <svg class="icon" viewBox="0 0 24 24">
+                    <path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const chatBox = document.getElementById('chat-box');
+        const emptyState = document.getElementById('empty-state');
+        const cmdInput = document.getElementById('cmd-input');
+        const sendBtn = document.getElementById('send-btn');
+        const micBtn = document.getElementById('mic-btn');
+        const statusText = document.getElementById('connection-status');
+        
+        let loadedMessages = new Set();
+        let isRecording = false;
+
+        async function fetchHistory() {
+            try {
+                const res = await fetch('/history');
+                const data = await res.json();
+                if (data.history && data.history.length > 0) {
+                    emptyState.style.display = 'none';
+                    let shouldScroll = false;
+                    
+                    data.history.forEach(msg => {
+                        const msgKey = `${msg.role}:${msg.content}`;
+                        if (!loadedMessages.has(msgKey)) {
+                            loadedMessages.add(msgKey);
+                            appendMessageToUI(msg.role, msg.content);
+                            shouldScroll = true;
+                        }
+                    });
+
+                    if (shouldScroll) {
+                        scrollToBottom();
+                    }
+                }
+            } catch (err) {
+                console.error("Error fetching history:", err);
+            }
+        }
+
+        async function sendCommand() {
+            const command = cmdInput.value.trim();
+            if (!command) return;
+
+            cmdInput.value = '';
+            appendMessageToUI('user', command);
+            scrollToBottom();
+            emptyState.style.display = 'none';
+
+            try {
+                const res = await fetch('/command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    fetchHistory();
+                } else {
+                    appendMessageToUI('system', `Error: ${data.detail || 'Failed to execute.'}`);
+                }
+            } catch (err) {
+                appendMessageToUI('system', `Network error: ${err.message}`);
+                scrollToBottom();
+            }
+        }
+
+        async function triggerVoiceCommand() {
+            if (isRecording) return;
+            
+            isRecording = true;
+            micBtn.classList.add('recording');
+            cmdInput.disabled = true;
+            cmdInput.placeholder = 'Phone recording for 5 seconds... Speak now!';
+
+            try {
+                const res = await fetch('/voice-command?duration=5', {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                
+                setTimeout(() => {
+                    isRecording = false;
+                    micBtn.classList.remove('recording');
+                    cmdInput.disabled = false;
+                    cmdInput.placeholder = 'Type a command (e.g. open vscode)...';
+                    fetchHistory();
+                }, 6000);
+            } catch (err) {
+                console.error("Error triggering voice command:", err);
+                isRecording = false;
+                micBtn.classList.remove('recording');
+                cmdInput.disabled = false;
+                cmdInput.placeholder = 'Type a command (e.g. open vscode)...';
+            }
+        }
+
+        function appendMessageToUI(role, content) {
+            emptyState.style.display = 'none';
+
+            const bubble = document.createElement('div');
+            bubble.classList.add('message', role);
+            
+            let displayRole = role === 'user' ? 'You' : (role === 'assistant' ? 'Brain' : 'System');
+            
+            bubble.innerHTML = `
+                <div style="font-weight: 600; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; opacity: 0.7;">
+                    ${displayRole}
+                </div>
+                <div>${escapeHTML(content)}</div>
+            `;
+            
+            chatBox.appendChild(bubble);
+        }
+
+        function escapeHTML(str) {
+            return str.replace(/[&<>'"]/g, 
+                tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
+            );
+        }
+
+        function scrollToBottom() {
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        sendBtn.addEventListener('click', sendCommand);
+        cmdInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendCommand();
+        });
+        micBtn.addEventListener('click', triggerVoiceCommand);
+
+        fetchHistory();
+        setInterval(fetchHistory, 2500);
+    </script>
+</body>
+</html>
