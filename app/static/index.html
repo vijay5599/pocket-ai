@@ -412,7 +412,7 @@
                     const tempBubble = document.getElementById('temp-voice-bubble');
                     
                     data.history.forEach(msg => {
-                        const msgKey = msg.id; // Unique database ID
+                        const msgKey = msg.id || `${msg.role}:${msg.content}`; // Unique database ID, fallback to content
                         if (!loadedMessages.has(msgKey)) {
                             loadedMessages.add(msgKey);
                             
