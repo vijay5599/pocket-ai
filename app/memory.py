@@ -71,13 +71,13 @@ def get_recent_history(limit: int = 10) -> list:
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "SELECT role, content FROM conversations ORDER BY id DESC LIMIT ?",
+        "SELECT id, role, content FROM conversations ORDER BY id DESC LIMIT ?",
         (limit,)
     )
     rows = cursor.fetchall()
     conn.close()
     # Return in chronological order
-    return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
+    return [{"id": r["id"], "role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
 def log_tool_call(tool_name: str, arguments: dict, status: str, result: str):
     conn = get_db_connection()

@@ -409,10 +409,18 @@
                     emptyState.style.display = 'none';
                     let shouldScroll = false;
                     
+                    const tempBubble = document.getElementById('temp-voice-bubble');
+                    
                     data.history.forEach(msg => {
-                        const msgKey = `${msg.role}:${msg.content}`;
+                        const msgKey = msg.id; // Unique database ID
                         if (!loadedMessages.has(msgKey)) {
                             loadedMessages.add(msgKey);
+                            
+                            // Remove temporary voice placeholder if a new message comes in
+                            if (tempBubble) {
+                                tempBubble.remove();
+                            }
+                            
                             appendMessageToUI(msg.role, msg.content);
                             shouldScroll = true;
                         }
@@ -460,7 +468,21 @@
             isRecording = true;
             micBtn.classList.add('recording');
             cmdInput.disabled = true;
-            cmdInput.placeholder = 'Phone recording for 5 seconds... Speak now!';
+            cmdInput.placeholder = 'Recording... Speak now!';
+            
+            // Append temporary listening placeholder bubble
+            emptyState.style.display = 'none';
+            const tempBubble = document.createElement('div');
+            tempBubble.id = 'temp-voice-bubble';
+            tempBubble.classList.add('message', 'system');
+            tempBubble.innerHTML = `
+                <div style="font-weight: 600; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; opacity: 0.7;">
+                    System
+                </div>
+                <div>🎤 Listening for 5 seconds... Speak now!</div>
+            `;
+            chatBox.appendChild(tempBubble);
+            scrollToBottom();
 
             try {
                 const res = await fetch('/voice-command?duration=5', {
@@ -468,19 +490,37 @@
                 });
                 const data = await res.json();
                 
+                // Show processing indicator after 5 seconds
+                setTimeout(() => {
+                    const bubble = document.getElementById('temp-voice-bubble');
+                    if (bubble) {
+                        bubble.innerHTML = `
+                            <div style="font-weight: 600; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; opacity: 0.7;">
+                                System
+                            </div>
+                            <div>⚙️ Processing audio and executing command...</div>
+                        `;
+                    }
+                }, 5000);
+                
+                // Fallback clean-up after 10 seconds
                 setTimeout(() => {
                     isRecording = false;
                     micBtn.classList.remove('recording');
                     cmdInput.disabled = false;
                     cmdInput.placeholder = 'Type a command (e.g. open vscode)...';
+                    const bubble = document.getElementById('temp-voice-bubble');
+                    if (bubble) bubble.remove();
                     fetchHistory();
-                }, 6000);
+                }, 10000);
             } catch (err) {
                 console.error("Error triggering voice command:", err);
                 isRecording = false;
                 micBtn.classList.remove('recording');
                 cmdInput.disabled = false;
                 cmdInput.placeholder = 'Type a command (e.g. open vscode)...';
+                const bubble = document.getElementById('temp-voice-bubble');
+                if (bubble) bubble.remove();
             }
         }
 
