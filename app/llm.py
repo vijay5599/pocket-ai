@@ -16,7 +16,7 @@ from app.memory import get_recent_history, resolve_project_path, get_db_connecti
 
 logger = logging.getLogger(__name__)
 
-# Upgraded TOOLS_GUIDE to teach the LLM how to utilize run_command dynamically
+# Upgraded TOOLS_GUIDE with a strict instruction on screencapture flags
 TOOLS_GUIDE = (
     "- open_vscode: Opens Visual Studio Code on the MacBook.\n"
     "- open_chrome: Opens Google Chrome on the MacBook.\n"
@@ -31,7 +31,9 @@ TOOLS_GUIDE = (
     "- run_command: Runs a general terminal shell command or script on the MacBook. Arguments: {'command': 'string'}. "
     "Use this for complex, custom, or multi-step requests not covered by other tools, such as sending emails, "
     "taking and saving screenshots to specific folders, moving/copying files, running custom python code, "
-    "or executing AppleScript automations via `osascript -e '...'`.\n"
+    "or executing AppleScript automations via `osascript -e '...'`. IMPORTANT: when running a custom screenshot "
+    "command, never use the interactive '-i' flag as it pauses execution; always run it instantly and silently "
+    "using 'screencapture -x [filepath.png]'.\n"
 )
 
 def run_offline_parser(user_prompt: str) -> dict:
@@ -122,6 +124,8 @@ def query_gemini_brain(user_prompt: str) -> dict:
         "For complex, custom, or multi-step requests (e.g. sending an email, taking a screenshot and saving "
         "it in a specific directory, moving files, etc.), you can write a shell command or AppleScript and call "
         "the run_command tool. Be creative and utilize standard macOS CLI utilities (like `screencapture`, `osascript`, `open`, etc.). "
+        "IMPORTANT: when using `screencapture` to capture the screen, never use the '-i' (interactive) flag as it pauses execution; "
+        "always run it instantly and silently using `screencapture -x [filepath.png]`. "
         "Keep replies short and concise."
     )
     
@@ -206,6 +210,8 @@ def query_openai_compatible_brain(user_prompt: str) -> dict:
         "For complex, custom, or multi-step requests (e.g. sending an email, taking a screenshot and saving "
         "it in a specific directory, moving files, etc.), you can write a shell command or AppleScript and call "
         "the run_command tool. Be creative and utilize standard macOS CLI utilities (like `screencapture`, `osascript`, `open`, etc.). "
+        "IMPORTANT: when using `screencapture` to capture the screen, never use the '-i' (interactive) flag as it pauses execution; "
+        "always run it instantly and silently using `screencapture -x [filepath.png]`. "
         "Keep replies short and concise."
     )
     
@@ -262,12 +268,10 @@ def query_brain(user_prompt: str) -> dict:
         tool_name = res_data["tool"]
         if tool_name not in supported_static_tools:
             args = res_data.get("arguments", {})
-            # If the LLM generated a custom command but hallucinated a semantic tool name, self-correct to run_command
             if "command" in args:
                 logger.warning(f"Self-corrected tool name hallucination '{tool_name}' -> 'run_command'")
                 res_data["tool"] = "run_command"
             else:
-                # If it's a completely unsupported tool with no command argument, default to offline parser
                 logger.warning(f"Unsupported tool '{tool_name}' returned. Resetting via offline fallback.")
                 return run_offline_parser(user_prompt)
                 
@@ -370,6 +374,8 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
             "For complex, custom, or multi-step requests (e.g. sending an email, taking a screenshot and saving "
             "it in a specific directory, moving files, etc.), you can write a shell command or AppleScript and call "
             "the run_command tool. Be creative and utilize standard macOS CLI utilities (like `screencapture`, `osascript`, `open`, etc.). "
+            "IMPORTANT: when using `screencapture` to capture the screen, never use the '-i' (interactive) flag as it pauses execution; "
+            "always run it instantly and silently using `screencapture -x [filepath.png]`. "
             "Keep replies short and concise."
         )
 
