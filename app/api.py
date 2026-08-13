@@ -68,6 +68,7 @@ def execute_pipeline_with_audio(audio_filepath: str) -> str:
     """
     ai_response = query_brain_with_audio(audio_filepath)
     transcription = ai_response.get("transcription", "[Voice Command]")
+    print("=== USER ===", transcription)
     add_message("user", transcription)
     
     if "tool" in ai_response:
