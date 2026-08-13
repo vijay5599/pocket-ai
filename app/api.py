@@ -66,8 +66,9 @@ def execute_pipeline_with_audio(audio_filepath: str) -> str:
     """
     Executes the pipeline using a recorded audio file.
     """
-    add_message("user", "[Voice Command]")
     ai_response = query_brain_with_audio(audio_filepath)
+    transcription = ai_response.get("transcription", "[Voice Command]")
+    add_message("user", transcription)
     
     if "tool" in ai_response:
         tool_name = ai_response["tool"]

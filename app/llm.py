@@ -329,11 +329,13 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
             "You MUST respond with a JSON object in one of the following formats:\n"
             "If executing a tool:\n"
             "{\n"
+            "  \"transcription\": \"exact transcribed spoken command from the user\",\n"
             "  \"tool\": \"tool_name\",\n"
             "  \"arguments\": {\"param_name\": \"value\"}\n"
             "}\n"
             "If replying conversationally:\n"
             "{\n"
+            "  \"transcription\": \"exact transcribed spoken command from the user\",\n"
             "  \"reply\": \"conversational response text\"\n"
             "}\n\n"
             "Available tools:\n"
@@ -396,4 +398,6 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
             return {"reply": "Sorry, I was unable to transcribe your voice command using the Whisper API."}
             
         logger.info(f"Whisper transcribed audio to: '{transcription}'. Submitting to {provider} brain...")
-        return query_brain(transcription)
+        res_data = query_brain(transcription)
+        res_data["transcription"] = transcription
+        return res_data
