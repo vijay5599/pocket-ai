@@ -242,7 +242,7 @@ def query_openai_compatible_brain(user_prompt: str) -> dict:
 
 def query_brain(user_prompt: str) -> dict:
     """
-    Main router function to query the selected LLM provider.
+    Main router function to query the selected LLM provider with self-correcting routing.
     """
     provider = LLM_PROVIDER.lower().strip()
     
@@ -251,6 +251,26 @@ def query_brain(user_prompt: str) -> dict:
     else:
         res_data = query_openai_compatible_brain(user_prompt)
         
+    # Self-Correction for LLM tool-name hallucinations (common in smaller models)
+    supported_static_tools = {
+        "open_vscode", "open_chrome", "open_terminal", "open_finder",
+        "open_folder", "take_screenshot", "list_downloads", "lock_screen",
+        "shutdown", "restart", "run_command"
+    }
+    
+    if "tool" in res_data:
+        tool_name = res_data["tool"]
+        if tool_name not in supported_static_tools:
+            args = res_data.get("arguments", {})
+            # If the LLM generated a custom command but hallucinated a semantic tool name, self-correct to run_command
+            if "command" in args:
+                logger.warning(f"Self-corrected tool name hallucination '{tool_name}' -> 'run_command'")
+                res_data["tool"] = "run_command"
+            else:
+                # If it's a completely unsupported tool with no command argument, default to offline parser
+                logger.warning(f"Unsupported tool '{tool_name}' returned. Resetting via offline fallback.")
+                return run_offline_parser(user_prompt)
+                
     if "tool" in res_data and "arguments" in res_data:
         args = res_data["arguments"]
         if "path" in args:
