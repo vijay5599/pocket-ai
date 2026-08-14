@@ -412,9 +412,11 @@
                     const tempBubble = document.getElementById('temp-voice-bubble');
                     
                     data.history.forEach(msg => {
-                        const msgKey = msg.id || `${msg.role}:${msg.content}`; // Unique database ID, fallback to content
-                        if (!loadedMessages.has(msgKey)) {
-                            loadedMessages.add(msgKey);
+                        const msgKey = msg.id;
+                        const fallbackKey = `${msg.role}:${msg.content}`;
+                        if (!loadedMessages.has(msgKey) && !loadedMessages.has(fallbackKey)) {
+                            if (msgKey) loadedMessages.add(msgKey);
+                            loadedMessages.add(fallbackKey);
                             
                             // Remove temporary voice placeholder if a new message comes in
                             if (tempBubble) {
@@ -441,6 +443,7 @@
 
             cmdInput.value = '';
             appendMessageToUI('user', command);
+            loadedMessages.add(`user:${command}`);
             scrollToBottom();
             emptyState.style.display = 'none';
 

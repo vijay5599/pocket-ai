@@ -16,10 +16,37 @@ from app.memory import get_recent_history, resolve_project_path, get_db_connecti
 
 logger = logging.getLogger(__name__)
 
+def sanitize_messages_for_llm(messages: list) -> list:
+    """
+    Ensures message roles alternate between user and assistant to prevent API 400 errors.
+    Merges consecutive messages of the same role together.
+    """
+    sanitized = []
+    if not messages:
+        return sanitized
+        
+    if messages[0]["role"] == "system":
+        sanitized.append(messages[0])
+        start_idx = 1
+    else:
+        start_idx = 0
+        
+    for i in range(start_idx, len(messages)):
+        msg = messages[i]
+        if not msg.get("content"):
+            continue
+            
+        if not sanitized or sanitized[-1]["role"] != msg["role"]:
+            sanitized.append(msg.copy())
+        else:
+            sanitized[-1]["content"] += "\n" + msg["content"]
+            
+    return sanitized
+
 # Upgraded TOOLS_GUIDE with a strict instruction on screencapture flags
 TOOLS_GUIDE = (
-    "- open_vscode: Opens Visual Studio Code on the MacBook.\n"
-    "- open_chrome: Opens Google Chrome on the MacBook.\n"
+    "- open_vscode: Opens Visual Studio Code on the MacBook. Arguments: {'path': 'string' (optional path to a file or folder to open)}\n"
+    "- open_chrome: Opens Google Chrome on the MacBook. Arguments: {'url': 'string' (optional URL to open, e.g., a pre-filled Gmail compose link)}\n"
     "- open_terminal: Opens the Terminal application on the MacBook.\n"
     "- open_finder: Opens Finder at the home directory on the MacBook.\n"
     "- open_folder: Opens a specific folder path in Finder on the MacBook. Arguments: {'path': 'string'}\n"
@@ -33,7 +60,8 @@ TOOLS_GUIDE = (
     "taking and saving screenshots to specific folders, moving/copying files, running custom python code, "
     "or executing AppleScript automations via `osascript -e '...'`. IMPORTANT: when running a custom screenshot "
     "command, never use the interactive '-i' flag as it pauses execution; always run it instantly and silently "
-    "using 'screencapture -x [filepath.png]'.\n"
+    "- write_file: Writes text content to a file on the MacBook. Arguments: {'path': 'string', 'content': 'string'}\n"
+    "- send_email: Composes and sends an email natively via the macOS Mail app. Arguments: {'to_email': 'string', 'subject': 'string', 'body': 'string'}\n"
 )
 
 def run_offline_parser(user_prompt: str) -> dict:
@@ -114,10 +142,10 @@ def query_gemini_brain(user_prompt: str) -> any:
         "  \"tool\": \"tool_name\",\n"
         "  \"arguments\": {\"param_name\": \"value\"}\n"
         "}\n"
-        "If executing multiple actions sequentially, return a JSON list of tool objects, e.g.:\n"
+        "If executing multiple actions sequentially (such as opening VS Code and creating a python file), return a JSON list of tool objects, e.g.:\n"
         "[\n"
         "  {\"tool\": \"open_vscode\", \"arguments\": {}},\n"
-        "  {\"tool\": \"run_command\", \"arguments\": {\"command\": \"code --new-file file.py\"}}\n"
+        "  {\"tool\": \"write_file\", \"arguments\": {\"path\": \"~/Desktop/script.py\", \"content\": \"print('hello')\"}}\n"
         "]\n"
         "If replying conversationally:\n"
         "{\n"
@@ -132,6 +160,13 @@ def query_gemini_brain(user_prompt: str) -> any:
         "the run_command tool. Be creative and utilize standard macOS CLI utilities (like `screencapture`, `osascript`, `open`, etc.). "
         "IMPORTANT: when using `screencapture` to capture the screen, never use the '-i' (interactive) flag as it pauses execution; "
         "always run it instantly and silently using `screencapture -x [filepath.png]`. "
+        "If the user asks to create a file and open it (or work on it in VS Code), you MUST return both steps in a JSON list: "
+        "first write the file using `write_file`, and then open it using `open_vscode` (passing the path argument). "
+        "If the user asks to write or send an email, you MUST use the `send_email` tool to actually send the email. "
+        "Only use `open_chrome` with a Gmail compose URL if the user explicitly wants to manually compose/draft "
+        "it in the browser without automatically sending it."
+        "If the user asks to play a song, play music, or search for a song (e.g. 'play any new kannada song'), "
+        "you MUST call `open_chrome` and pass a YouTube Music search URL: 'https://music.youtube.com/search?q=search_terms'."
         "Keep replies short and concise."
     )
     
@@ -205,10 +240,10 @@ def query_openai_compatible_brain(user_prompt: str) -> any:
         "  \"tool\": \"tool_name\",\n"
         "  \"arguments\": {\"param_name\": \"value\"}\n"
         "}\n"
-        "If executing multiple actions sequentially, return a JSON list of tool objects, e.g.:\n"
+        "If executing multiple actions sequentially (such as opening VS Code and creating a python file), return a JSON list of tool objects, e.g.:\n"
         "[\n"
         "  {\"tool\": \"open_vscode\", \"arguments\": {}},\n"
-        "  {\"tool\": \"run_command\", \"arguments\": {\"command\": \"code --new-file file.py\"}}\n"
+        "  {\"tool\": \"write_file\", \"arguments\": {\"path\": \"~/Desktop/script.py\", \"content\": \"print('hello')\"}}\n"
         "]\n"
         "If replying conversationally:\n"
         "{\n"
@@ -223,6 +258,13 @@ def query_openai_compatible_brain(user_prompt: str) -> any:
         "the run_command tool. Be creative and utilize standard macOS CLI utilities (like `screencapture`, `osascript`, `open`, etc.). "
         "IMPORTANT: when using `screencapture` to capture the screen, never use the '-i' (interactive) flag as it pauses execution; "
         "always run it instantly and silently using `screencapture -x [filepath.png]`. "
+        "If the user asks to create a file and open it (or work on it in VS Code), you MUST return both steps in a JSON list: "
+        "first write the file using `write_file`, and then open it using `open_vscode` (passing the path argument). "
+        "If the user asks to write or send an email, you MUST use the `send_email` tool to actually send the email. "
+        "Only use `open_chrome` with a Gmail compose URL if the user explicitly wants to manually compose/draft "
+        "it in the browser without automatically sending it."
+        "If the user asks to play a song, play music, or search for a song (e.g. 'play any new kannada song'), "
+        "you MUST call `open_chrome` and pass a YouTube Music search URL: 'https://music.youtube.com/search?q=search_terms'."
         "Keep replies short and concise."
     )
     
@@ -231,6 +273,9 @@ def query_openai_compatible_brain(user_prompt: str) -> any:
         role_map = {"user": "user", "assistant": "assistant"}
         messages.append({"role": role_map.get(msg["role"], "user"), "content": msg["content"]})
     messages.append({"role": "user", "content": user_prompt})
+    
+    # Sanitize roles to ensure alternating order for Groq/OpenAI APIs
+    messages = sanitize_messages_for_llm(messages)
     
     headers = {
         "Content-Type": "application/json"
@@ -254,6 +299,8 @@ def query_openai_compatible_brain(user_prompt: str) -> any:
         logger.info(f"{provider} parsed response: {res_data}")
         return res_data
     except Exception as e:
+        if 'res' in locals() and hasattr(res, 'text'):
+            logger.error(f"Groq/OpenAI API Error Response Body: {res.text}")
         logger.exception(f"Error querying {provider} API: {e}")
         return run_offline_parser(user_prompt)
 
@@ -275,7 +322,7 @@ def query_brain(user_prompt: str) -> dict:
         supported_static_tools = {
             "open_vscode", "open_chrome", "open_terminal", "open_finder",
             "open_folder", "take_screenshot", "list_downloads", "lock_screen",
-            "shutdown", "restart", "run_command"
+            "shutdown", "restart", "run_command", "write_file", "send_email"
         }
         if "tool" in call:
             tool_name = call["tool"]
@@ -303,11 +350,33 @@ def query_brain(user_prompt: str) -> dict:
         for step in res_data:
             if isinstance(step, dict):
                 processed_steps.append(process_tool_call(step))
-        return {"steps": processed_steps}
+        # Deduplicate consecutive identical steps
+        deduplicated_steps = []
+        for step in processed_steps:
+            if not deduplicated_steps:
+                deduplicated_steps.append(step)
+            else:
+                last = deduplicated_steps[-1]
+                if last.get("tool") == step.get("tool") and last.get("arguments") == step.get("arguments"):
+                    logger.warning(f"Deduplicated consecutive identical step: {step.get('tool')}")
+                    continue
+                deduplicated_steps.append(step)
+        return {"steps": deduplicated_steps}
     elif isinstance(res_data, dict):
         if "steps" in res_data:
             processed_steps = [process_tool_call(s) for s in res_data["steps"] if isinstance(s, dict)]
-            res_data["steps"] = processed_steps
+            # Deduplicate consecutive identical steps
+            deduplicated_steps = []
+            for step in processed_steps:
+                if not deduplicated_steps:
+                    deduplicated_steps.append(step)
+                else:
+                    last = deduplicated_steps[-1]
+                    if last.get("tool") == step.get("tool") and last.get("arguments") == step.get("arguments"):
+                        logger.warning(f"Deduplicated consecutive identical step: {step.get('tool')}")
+                        continue
+                    deduplicated_steps.append(step)
+            res_data["steps"] = deduplicated_steps
             return res_data
         return process_tool_call(res_data)
     else:
@@ -391,10 +460,10 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
             "  \"tool\": \"tool_name\",\n"
             "  \"arguments\": {\"param_name\": \"value\"}\n"
             "}\n"
-            "If executing multiple actions sequentially, return a JSON list of tool objects, e.g.:\n"
+            "If executing multiple actions sequentially (such as opening VS Code and creating a python file), return a JSON list of tool objects, e.g.:\n"
             "[\n"
             "  {\"tool\": \"open_vscode\", \"arguments\": {}},\n"
-            "  {\"tool\": \"run_command\", \"arguments\": {\"command\": \"code --new-file file.py\"}}\n"
+            "  {\"tool\": \"write_file\", \"arguments\": {\"path\": \"~/Desktop/script.py\", \"content\": \"print('hello')\"}}\n"
             "]\n"
             "If replying conversationally:\n"
             "{\n"
@@ -410,6 +479,13 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
             "the run_command tool. Be creative and utilize standard macOS CLI utilities (like `screencapture`, `osascript`, `open`, etc.). "
             "IMPORTANT: when using `screencapture` to capture the screen, never use the '-i' (interactive) flag as it pauses execution; "
             "always run it instantly and silently using `screencapture -x [filepath.png]`. "
+            "If the user asks to create a file and open it (or work on it in VS Code), you MUST return both steps in a JSON list: "
+            "first write the file using `write_file`, and then open it using `open_vscode` (passing the path argument). "
+            "If the user asks to write or send an email, you MUST use the `send_email` tool to actually send the email. "
+            "Only use `open_chrome` with a Gmail compose URL if the user explicitly wants to manually compose/draft "
+            "it in the browser without automatically sending it."
+            "If the user asks to play a song, play music, or search for a song (e.g. 'play any new kannada song'), "
+            "you MUST call `open_chrome` and pass a YouTube Music search URL: 'https://music.youtube.com/search?q=search_terms'."
             "Keep replies short and concise."
         )
 
