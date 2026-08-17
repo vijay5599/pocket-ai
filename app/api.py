@@ -5,7 +5,6 @@ from fastapi.responses import HTMLResponse, FileResponse
 from pydantic import BaseModel
 from typing import Dict, Any, List
 from app.llm import query_brain, query_brain_with_audio
-from app.client import send_command
 from app.tts import speak
 from app.speech import record_audio
 from app.memory import add_message, log_tool_call, get_recent_history, set_value, get_value
@@ -32,46 +31,66 @@ def execute_pipeline(user_prompt: str) -> str:
     # 2. Consult LLM brain
     ai_response = query_brain(user_prompt)
     
-    def run_single_tool(tool_name: str, arguments: dict) -> str:
-        # Execute tool on Mac
-        result_payload = send_command(tool_name, arguments)
-        status = result_payload.get("status", "error")
-        result = result_payload.get("result", result_payload.get("message", "Execution failed."))
+    def run_single_tool(tool_name: str, arguments: dict) -> dict:
+        # Execute tool directly in Python
+        from app.executor import execute_tool
+        status, result = execute_tool(tool_name, arguments)
         
         # Log tool execution to memory
         log_tool_call(tool_name, arguments, status, result)
         
-        # Generate spoken response
+        # Generate UI and spoken responses
         if status == "success":
             if isinstance(result, dict) and "exit_code" in result:
                 if result["exit_code"] == 0:
-                    spoken = result["stdout"].strip() if result.get("stdout") else f"Successfully ran {tool_name}."
+                    ui_text = result["stdout"].strip() if result.get("stdout") else f"Successfully ran {tool_name}."
+                    # Short speech response if the output is long
+                    if len(ui_text) > 150:
+                        tts_text = f"Command executed successfully."
+                    else:
+                        tts_text = ui_text
                 else:
-                    spoken = f"Command failed with error: {result['stderr'].strip()}" if result.get("stderr") else f"Command failed with exit code {result['exit_code']}."
+                    err_text = result['stderr'].strip() if result.get('stderr') else f"Command failed with exit code {result['exit_code']}."
+                    ui_text = f"Command failed with error: {err_text}"
+                    if len(err_text) > 150:
+                        tts_text = "Command failed with an error."
+                    else:
+                        tts_text = ui_text
             else:
-                spoken = str(result)
+                ui_text = str(result)
+                if len(ui_text) > 150:
+                    tts_text = f"Successfully executed {tool_name}."
+                else:
+                    tts_text = ui_text
         else:
-            spoken = f"Failed to execute {tool_name}. {result}"
-        return spoken
+            ui_text = f"Failed to execute {tool_name}. {result}"
+            tts_text = ui_text
+            
+        return {"ui": ui_text, "tts": tts_text}
 
     # 3. Handle response
     if "steps" in ai_response:
-        spoken_parts = []
+        ui_parts = []
+        tts_parts = []
         for step in ai_response["steps"]:
             if "tool" in step:
-                spoken_parts.append(run_single_tool(step["tool"], step.get("arguments", {})))
+                res = run_single_tool(step["tool"], step.get("arguments", {}))
+                ui_parts.append(res["ui"])
+                tts_parts.append(res["tts"])
             elif "reply" in step:
-                spoken_parts.append(step["reply"])
-        spoken_text = " ".join(spoken_parts)
-        add_message("assistant", spoken_text)
-        speak(spoken_text)
-        return spoken_text
+                ui_parts.append(step["reply"])
+                tts_parts.append(step["reply"])
+        ui_text = "\n\n".join(ui_parts)
+        tts_text = " ".join(tts_parts)
+        add_message("assistant", ui_text)
+        speak(tts_text)
+        return ui_text
         
     elif "tool" in ai_response:
-        spoken_text = run_single_tool(ai_response["tool"], ai_response.get("arguments", {}))
-        add_message("assistant", spoken_text)
-        speak(spoken_text)
-        return spoken_text
+        res = run_single_tool(ai_response["tool"], ai_response.get("arguments", {}))
+        add_message("assistant", res["ui"])
+        speak(res["tts"])
+        return res["ui"]
         
     else:
         # Conversational reply
@@ -89,41 +108,63 @@ def execute_pipeline_with_audio(audio_filepath: str) -> str:
     print("=== USER ===", transcription)
     add_message("user", transcription)
     
-    def run_single_tool(tool_name: str, arguments: dict) -> str:
-        result_payload = send_command(tool_name, arguments)
-        status = result_payload.get("status", "error")
-        result = result_payload.get("result", result_payload.get("message", "Execution failed."))
+    def run_single_tool(tool_name: str, arguments: dict) -> dict:
+        # Execute tool directly in Python
+        from app.executor import execute_tool
+        status, result = execute_tool(tool_name, arguments)
         log_tool_call(tool_name, arguments, status, result)
         
+        # Generate UI and spoken responses
         if status == "success":
             if isinstance(result, dict) and "exit_code" in result:
                 if result["exit_code"] == 0:
-                    spoken = result["stdout"].strip() if result.get("stdout") else f"Successfully ran {tool_name}."
+                    ui_text = result["stdout"].strip() if result.get("stdout") else f"Successfully ran {tool_name}."
+                    # Short speech response if the output is long
+                    if len(ui_text) > 150:
+                        tts_text = f"Command executed successfully."
+                    else:
+                        tts_text = ui_text
                 else:
-                    spoken = f"Command failed with error: {result['stderr'].strip()}" if result.get("stderr") else f"Command failed with exit code {result['exit_code']}."
+                    err_text = result['stderr'].strip() if result.get('stderr') else f"Command failed with exit code {result['exit_code']}."
+                    ui_text = f"Command failed with error: {err_text}"
+                    if len(err_text) > 150:
+                        tts_text = "Command failed with an error."
+                    else:
+                        tts_text = ui_text
             else:
-                spoken = str(result)
+                ui_text = str(result)
+                if len(ui_text) > 150:
+                    tts_text = f"Successfully executed {tool_name}."
+                else:
+                    tts_text = ui_text
         else:
-            spoken = f"Failed to execute {tool_name}. {result}"
-        return spoken
+            ui_text = f"Failed to execute {tool_name}. {result}"
+            tts_text = ui_text
+            
+        return {"ui": ui_text, "tts": tts_text}
 
     if "steps" in ai_response:
-        spoken_parts = []
+        ui_parts = []
+        tts_parts = []
         for step in ai_response["steps"]:
             if "tool" in step:
-                spoken_parts.append(run_single_tool(step["tool"], step.get("arguments", {})))
+                res = run_single_tool(step["tool"], step.get("arguments", {}))
+                ui_parts.append(res["ui"])
+                tts_parts.append(res["tts"])
             elif "reply" in step:
-                spoken_parts.append(step["reply"])
-        spoken_text = " ".join(spoken_parts)
-        add_message("assistant", spoken_text)
-        speak(spoken_text)
-        return spoken_text
+                ui_parts.append(step["reply"])
+                tts_parts.append(step["reply"])
+        ui_text = "\n\n".join(ui_parts)
+        tts_text = " ".join(tts_parts)
+        add_message("assistant", ui_text)
+        speak(tts_text)
+        return ui_text
         
     elif "tool" in ai_response:
-        spoken_text = run_single_tool(ai_response["tool"], ai_response.get("arguments", {}))
-        add_message("assistant", spoken_text)
-        speak(spoken_text)
-        return spoken_text
+        res = run_single_tool(ai_response["tool"], ai_response.get("arguments", {}))
+        add_message("assistant", res["ui"])
+        speak(res["tts"])
+        return res["ui"]
         
     else:
         spoken_text = ai_response.get("reply", "I'm not sure how to respond.")

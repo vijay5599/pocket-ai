@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env file relative to the app structure
 app_parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 env_path = os.path.join(app_parent_dir, ".env")
-load_dotenv(dotenv_path=env_path)
+load_dotenv(dotenv_path=env_path, override=True)
 
 # API Keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")

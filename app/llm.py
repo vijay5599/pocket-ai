@@ -59,9 +59,12 @@ TOOLS_GUIDE = (
     "Use this for complex, custom, or multi-step requests not covered by other tools, such as sending emails, "
     "taking and saving screenshots to specific folders, moving/copying files, running custom python code, "
     "or executing AppleScript automations via `osascript -e '...'`. IMPORTANT: when running a custom screenshot "
-    "command, never use the interactive '-i' flag as it pauses execution; always run it instantly and silently "
+    "command, never use the interactive '-i' flag as it pauses execution; always run it instantly and silently \n"
     "- write_file: Writes text content to a file on the MacBook. Arguments: {'path': 'string', 'content': 'string'}\n"
     "- send_email: Composes and sends an email natively via the macOS Mail app. Arguments: {'to_email': 'string', 'subject': 'string', 'body': 'string'}\n"
+    "- automate_browser: Automates actions in a headless browser (navigate, click, fill input, screenshot). Arguments: {'url': 'string', 'action': 'string' (optional: 'screenshot' or 'content'), 'click_selector': 'string' (optional CSS click selector), 'fill_selector': 'string' (optional CSS input selector), 'fill_text': 'string' (optional text to type into fill_selector)}\n"
+    "- modify_file: Modifies an existing file on the MacBook by finding specific target text and replacing it. Arguments: {'path': 'string', 'target_text': 'string', 'replacement_text': 'string'}\n"
+    "- play_media: Searches for a video or song on YouTube or YouTube Music, finds the direct link, and opens it directly in Chrome to play automatically. Arguments: {'query': 'string', 'platform': 'string' (optional: 'youtube' or 'youtube_music')}\n"
 )
 
 def run_offline_parser(user_prompt: str) -> dict:
@@ -200,14 +203,214 @@ def query_gemini_brain(user_prompt: str) -> any:
         logger.exception(f"Error querying Gemini API: {e}")
         return run_offline_parser(user_prompt)
 
-def query_openai_compatible_brain(user_prompt: str) -> any:
+def get_groq_tools_payload() -> list:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": "open_vscode",
+                "description": "Opens Visual Studio Code on the MacBook. Option parameter path can be set to open a file/folder.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "optional path to a file or folder to open"}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "open_chrome",
+                "description": "Opens Google Chrome on the MacBook. Optional URL to open can be specified.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "optional URL to open"}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "open_terminal",
+                "description": "Opens the Terminal application on the MacBook.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "open_finder",
+                "description": "Opens Finder at the home directory on the MacBook.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "open_folder",
+                "description": "Opens a specific folder path in Finder on the MacBook.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "The folder path to open"}
+                    },
+                    "required": ["path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "take_screenshot",
+                "description": "Takes a screenshot of the MacBook screen (default save to Desktop).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Optional save path"}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "list_downloads",
+                "description": "Lists the files inside the Downloads directory on the MacBook.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "lock_screen",
+                "description": "Locks the MacBook screen immediately.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "shutdown",
+                "description": "Shuts down the MacBook.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "restart",
+                "description": "Restarts the MacBook.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "run_command",
+                "description": "Runs a general terminal shell command or script on the MacBook. Used for custom/complex script runs.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {"type": "string", "description": "The command string to run"},
+                        "timeout": {"type": "integer", "description": "Optional timeout in seconds. Default is 60. Set larger (e.g. 180) for long commands like package installations."}
+                    },
+                    "required": ["command"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "write_file",
+                "description": "Writes text content to a file on the MacBook.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File path"},
+                        "content": {"type": "string", "description": "Content of the file"}
+                    },
+                    "required": ["path", "content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "send_email",
+                "description": "Composes and sends an email natively via the macOS Mail app.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "to_email": {"type": "string", "description": "Recipient email"},
+                        "subject": {"type": "string", "description": "Email subject"},
+                        "body": {"type": "string", "description": "Email body"}
+                    },
+                    "required": ["to_email"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "automate_browser",
+                "description": "Automates actions in a headless browser (navigating, clicking, filling inputs, screenshot).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "The URL to navigate to"},
+                        "action": {"type": "string", "description": "Optional action: screenshot or content"},
+                        "click_selector": {"type": "string", "description": "Optional selector to click"},
+                        "fill_selector": {"type": "string", "description": "Optional selector to fill"},
+                        "fill_text": {"type": "string", "description": "Optional text to fill"}
+                    },
+                    "required": ["url"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "modify_file",
+                "description": "Modifies an existing file on the MacBook by finding specific target text and replacing it.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "File path"},
+                        "target_text": {"type": "string", "description": "The exact string to find"},
+                        "replacement_text": {"type": "string", "description": "The replacement string"}
+                    },
+                    "required": ["path", "target_text", "replacement_text"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "play_media",
+                "description": "Searches for a video or song on YouTube or YouTube Music, finds the direct link, and opens it directly in Chrome to play automatically.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "The search query (e.g. song or artist)"},
+                        "platform": {"type": "string", "description": "Target platform: 'youtube' or 'youtube_music'"}
+                    },
+                    "required": ["query"]
+                }
+            }
+        }
+    ]
+
+def query_openai_compatible_brain(user_prompt: str) -> dict:
     """
-    Queries an OpenAI-compatible endpoint (OpenAI, Ollama, Groq, DeepSeek).
+    Queries an OpenAI-compatible API (like Groq) using native tool calling.
+    Returns parsed JSON object containing either tool execution steps or conversational reply.
     """
     provider = LLM_PROVIDER.lower().strip()
-    
-    base_url = LLM_BASE_URL
     api_key = LLM_API_KEY
+    base_url = LLM_BASE_URL
     model = LLM_MODEL
     
     if provider == "ollama":
@@ -232,39 +435,12 @@ def query_openai_compatible_brain(user_prompt: str) -> any:
     
     system_instruction = (
         "You are PocketDev AI, a personal AI brain running on an Android phone that controls a MacBook worker. "
-        "Your task is to understand the user's command and decide if it can be fulfilled by executing a tool "
-        "on the Mac, or if you should respond conversationally.\n"
-        "You MUST respond with a JSON object (or JSON list of objects for multi-step tasks) ONLY, in one of the following formats:\n"
-        "If executing a single tool:\n"
-        "{\n"
-        "  \"tool\": \"tool_name\",\n"
-        "  \"arguments\": {\"param_name\": \"value\"}\n"
-        "}\n"
-        "If executing multiple actions sequentially (such as opening VS Code and creating a python file), return a JSON list of tool objects, e.g.:\n"
-        "[\n"
-        "  {\"tool\": \"open_vscode\", \"arguments\": {}},\n"
-        "  {\"tool\": \"write_file\", \"arguments\": {\"path\": \"~/Desktop/script.py\", \"content\": \"print('hello')\"}}\n"
-        "]\n"
-        "If replying conversationally:\n"
-        "{\n"
-        "  \"reply\": \"conversational response text\"\n"
-        "}\n\n"
-        "Available tools:\n"
-        f"{TOOLS_GUIDE}\n"
+        "Your task is to understand the user's command and decide if it can be fulfilled by executing one of your "
+        "available tools on the Mac, or if you should respond conversationally.\n\n"
         "Here is the context of saved project folders on the Mac:\n"
         f"{projects_context}\n\n"
-        "For complex, custom, or multi-step requests (e.g. sending an email, taking a screenshot and saving "
-        "it in a specific directory, moving files, etc.), you can write a shell command or AppleScript and call "
-        "the run_command tool. Be creative and utilize standard macOS CLI utilities (like `screencapture`, `osascript`, `open`, etc.). "
-        "IMPORTANT: when using `screencapture` to capture the screen, never use the '-i' (interactive) flag as it pauses execution; "
-        "always run it instantly and silently using `screencapture -x [filepath.png]`. "
-        "If the user asks to create a file and open it (or work on it in VS Code), you MUST return both steps in a JSON list: "
-        "first write the file using `write_file`, and then open it using `open_vscode` (passing the path argument). "
-        "If the user asks to write or send an email, you MUST use the `send_email` tool to actually send the email. "
-        "Only use `open_chrome` with a Gmail compose URL if the user explicitly wants to manually compose/draft "
-        "it in the browser without automatically sending it."
-        "If the user asks to play a song, play music, or search for a song (e.g. 'play any new kannada song'), "
-        "you MUST call `open_chrome` and pass a YouTube Music search URL: 'https://music.youtube.com/search?q=search_terms'."
+        "If the user asks to play a song, play music, or search for a song, you MUST call the play_media tool, "
+        "passing the song/artist query and the target platform ('youtube' or 'youtube_music').\n"
         "Keep replies short and concise."
     )
     
@@ -286,16 +462,42 @@ def query_openai_compatible_brain(user_prompt: str) -> any:
     payload = {
         "model": model,
         "messages": messages,
-        "response_format": {"type": "json_object"}
+        "tools": get_groq_tools_payload(),
+        "tool_choice": "auto"
     }
     
     try:
-        logger.info(f"Querying {provider} model '{model}' at {base_url}...")
+        logger.info(f"Querying {provider} model '{model}' using native tools at {base_url}...")
         res = requests.post(f"{base_url}/chat/completions", json=payload, headers=headers, timeout=20)
         res.raise_for_status()
         
-        content = res.json()["choices"][0]["message"]["content"]
-        res_data = json.loads(content.strip())
+        choice_msg = res.json()["choices"][0]["message"]
+        
+        if "tool_calls" in choice_msg:
+            tool_calls = choice_msg["tool_calls"]
+            steps = []
+            for call in tool_calls:
+                func = call["function"]
+                try:
+                    fn_args = json.loads(func["arguments"])
+                except Exception:
+                    fn_args = {}
+                steps.append({
+                    "tool": func["name"],
+                    "arguments": fn_args
+                })
+            
+            if len(steps) == 1:
+                res_data = steps[0]
+            else:
+                res_data = {"steps": steps}
+        else:
+            content = choice_msg.get("content", "").strip()
+            try:
+                res_data = json.loads(content)
+            except Exception:
+                res_data = {"reply": content}
+                
         logger.info(f"{provider} parsed response: {res_data}")
         return res_data
     except Exception as e:
@@ -322,10 +524,13 @@ def query_brain(user_prompt: str) -> dict:
         supported_static_tools = {
             "open_vscode", "open_chrome", "open_terminal", "open_finder",
             "open_folder", "take_screenshot", "list_downloads", "lock_screen",
-            "shutdown", "restart", "run_command", "write_file", "send_email"
+            "shutdown", "restart", "run_command", "write_file", "send_email",
+            "automate_browser", "modify_file", "play_media"
         }
         if "tool" in call:
             tool_name = call["tool"]
+            if "args" in call and "arguments" not in call:
+                call["arguments"] = call["args"]
             args = call.get("arguments", {})
             
             # Self-correct unrecognized tool names to run_command if they look like commands
@@ -485,7 +690,7 @@ def query_brain_with_audio(audio_filepath: str) -> dict:
             "Only use `open_chrome` with a Gmail compose URL if the user explicitly wants to manually compose/draft "
             "it in the browser without automatically sending it."
             "If the user asks to play a song, play music, or search for a song (e.g. 'play any new kannada song'), "
-            "you MUST call `open_chrome` and pass a YouTube Music search URL: 'https://music.youtube.com/search?q=search_terms'."
+            "you MUST call the play_media tool, passing the song/artist query and the target platform ('youtube' or 'youtube_music')."
             "Keep replies short and concise."
         )
 

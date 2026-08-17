@@ -35,12 +35,12 @@ def play_audio(filepath: str):
     
     for cmd, args in players:
         if shutil.which(cmd):
-            logger.info(f"Found player '{cmd}', executing...")
+            logger.info(f"Found player '{cmd}', spawning in background...")
             try:
-                subprocess.run([cmd] + args, check=True)
+                subprocess.Popen([cmd] + args)
                 return
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Player {cmd} failed with exit code {e.returncode}")
+            except Exception as e:
+                logger.error(f"Player {cmd} failed to launch: {e}")
                 continue
                 
     logger.warning("No command-line audio player could be found to play back TTS output. Output saved to response.mp3.")
